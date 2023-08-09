@@ -1,0 +1,293 @@
+---
+title: "Data Exploration"
+author: "Pascal Schneider"
+date: "`r Sys.Date()`"
+output: 
+  html_notebook:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+# options(width = 150)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+# R Setup
+
+```{r}
+library(tidyverse)
+library(visdat)
+sapply(list.files(here::here("R"), full.names = TRUE), 
+       source)
+```
+
+# Load Metadata
+
+## Variable Description
+
+```{r warning=FALSE}
+# Data downloaded from: https://inventaire-forestier.ign.fr/dataifn/
+
+# Read in metadata for all variables
+raw_metadata <- 
+  read_csv2(
+    "data/raw/export_dataifn_2005_2021/metadonnees.csv", 
+    skip = 17,    # Skip initial descriptions
+    n_max = 163,  # Only load variable descriptions
+  ) |> 
+  rename(variable = "// Code",
+         label = "Libellé",
+         description = "Définition") |> 
+  arrange(variable)
+
+raw_metadata |> knitr::kable()
+```
+
+## Variable Units
+
+```{r}
+# Read in units for all variables
+raw_units <- 
+  read_csv2(
+    "data/raw/export_dataifn_2005_2021/metadonnees.csv", 
+    skip = 184,    # Skip initial descriptions and metadata
+    n_max = 224,  # Only load unit descriptions
+
+  ) |> 
+  rename(variable = "// Donnée",
+         label = "Libellé",
+         unit = "Unité",
+         campagnes = "Campagnes",
+         type = "Type",
+         description = "Définition") |> 
+  arrange(variable)
+
+raw_units |> knitr::kable()
+```
+
+## Factor Levels
+```{r}
+# Read in levels for factor variables
+raw_lvls <- 
+  read_csv2(
+    "data/raw/export_dataifn_2005_2021/metadonnees.csv", 
+    skip = 412,    # Skip metadata and units
+  ) |> 
+  rename(variable = "// Unité",
+         label = "Libellé",
+         lvl = "Code",
+         description = "Définition") |> 
+  arrange(variable)
+
+# Do not print as kable because too long
+# raw_lvls
+
+# VEGET 5 info
+raw_lvls |> filter(str_detect(variable, "VEGET5")) |> arrange(lvl)
+```
+
+raw_lvls# Wrangle Raw Data (Large)
+
+## Load Raw Data
+
+```{r}
+# Load all datafiles into a list
+l_raw_data <- list()
+
+# Data directory
+dr_data <- here::here("data/raw/export_dataifn_2005_2021/")
+
+for (file in list.files(dr_data, pattern = ".csv", include.dirs = FALSE)){
+  
+  # Get name and path for data
+  name <- file |> stringr::str_to_lower() |> stringr::str_remove(".csv")
+  path <- paste0(dr_data, file)
+  
+  # Skip non-data files
+  if (name %in% c("metadonnees", "espar-cdref13")) {next}
+  
+  # Save data to list
+  l_raw_data[[name]] <- readr::read_csv2(path, na = "")
+}
+
+# Clean up variable names
+l_raw_data <- purrr::map(l_raw_data, ~format_vars(raw_units, .))
+
+# Drop columns with NA only
+f_tmp <- function(df_in) dplyr::select(where(~!all(is.na(df_in)))) 
+l_raw_data <- purrr::map(l_raw_data, ~select(where(~!all(is.na(.)))))
+```
+
+
+
+
+# Archive / Work Zone
+
+```{r}
+# Merge data stepwise, 'arbre' is the base dataframe for merging
+raw_merged <- l_raw_data[[1]]
+raw_merged <- left_join(raw_merged, l_raw_data[[2]], by = c("IDP", "CAMPAGNE", "A"))
+raw_merged <- left_join(raw_merged, l_raw_data[[3]], by = c("IDP", "CAMPAGNE"), relationship = "many-to-many")
+raw_merged <- left_join(raw_merged, l_raw_data[[4]], by = c("IDP", "CAMPAGNE"))
+raw_merged <- left_join(raw_merged, l_raw_data[[6]], by = c("IDP", "CAMPAGNE"), relationship = "many-to-many")
+raw_merged <- left_join(raw_merged, l_raw_data[[7]], by = c("IDP", "CAMPAGNE"))
+
+# Ignoring flora dataset currently because it blows up the merging process
+# raw_merged <- full_join(raw_merged, l_raw_data[[5]], by = c("IDP", "CAMPAGNE"), relationship = "many-to-many")
+```
+
+```{r}
+# Remove columns that yield no data
+raw_merged <- raw_merged |> select(where(~!all(is.na(.)))) 
+```
+
+## Adjust Variable Format
+
+```{r}
+# Function could be applied to list of data l_raw_data
+# l_raw_data <- purrr::map(l_raw_data, ~format_vars(.))
+
+
+```
+
+
+## Export Clean Data
+```{r}
+saveRDS(raw_clean, here::here("data/tmp/cleaned_raw_data.rds"))
+```
+
+
+# Wrangle Raw Data (Minimal)
+
+```{r}
+# Load data
+raw_tre <- read.csv2(here::here("data/raw/export_dataifn_2005_2021/ARBRE.csv"), na.strings = "")
+raw_loc <- read.csv2(here::here("data/raw/export_dataifn_2005_2021/PLACETTE.csv"), na.strings = "")
+```
+
+```{r}
+# Format variables
+df_tre <- format_vars(raw_units, raw_tre)
+df_loc <- format_vars(raw_units, raw_loc)
+```
+
+```{r}
+# Aggregate to stand level
+df_tre <- df_tre |> group_by(campagne, idp)
+df_loc <- df_loc |> group_by(campagne, idp, lat, lon)
+```
+
+```{r}
+# Check for which data 
+l_tre <- df_tre |> nest() |> mutate(i = paste0(campagne, "-", idp)) |> pull(i)
+l_loc <- df_loc |> nest() |> mutate(i = paste0(campagne, "-", idp)) |> pull(i)
+
+n_dif <- setdiff(l_loc, l_tre) |> length()
+n_loc <- df_loc |> mutate(id = paste0(lon, "-" , lat)) |> pull(id) |> unique() |> length()
+```
+
+```{r}
+cat("\n There are", n_loc, "different locations in the dataset.")
+cat("\n There are", n_dif, "plots with location data but without tree data.")
+cat("\n There are", n_loc-n_dif, "plots with location and tree data.")
+```
+
+```{r}
+# Take subsample to speed up computations
+# df_tre <- df_tre |> filter(campagne %in% c(2005, 2010))
+# df_loc <- df_loc |> filter(campagne %in% c(2005, 2010))
+```
+
+
+```{r}
+# Take count of trees per group
+df_cou <- 
+  df_tre |>
+  nest() |>
+  mutate(n_tre = purrr::map_dbl(data, ~nrow(.))) |> 
+  select(n_tre)
+
+# Separate numerical variables into ones to take the mean of 
+# and ones to take the sum of
+l_mea <- c("q1", "q2", "q3", "age13", "age", "c13", "c0", "htot", "ddec", 
+           "hdec", "w", "r", "hrb", "ir5", "ir1")
+l_sum <- c("v")
+
+# Take mean and sd
+df_mean <- 
+  df_tre |>
+  select(all_of(l_mea)) |> 
+  summarise(across(everything(), ~mean(.x , na.rm = TRUE)))
+
+df_sd <- 
+  df_tre |>
+  select(all_of(l_mea)) |> 
+  summarise(across(everything(), ~sd(.x , na.rm = TRUE)))
+
+# Clean names for sd dataframe
+l_nam <- df_sd |> ungroup() |> select(-idp, -campagne) |> names()
+df_sd <- df_sd |> rename_with(~ paste0(., "_sd"), all_of(l_nam))
+
+# Take sum
+df_sum <- 
+  df_tre |>
+  select(all_of(l_sum)) |> 
+  summarise(across(everything(), ~sum(.x , na.rm = TRUE)))
+
+# For factor values, take majority
+df_fac <- 
+  df_tre |>
+  select_if(is.factor) |> 
+  summarise(across(everything(), ~names(which.max(table(.x))))) |> 
+  mutate(across(where(is.character), ~ as.factor(.)))
+
+# Bring it all back together again
+df_agg <- 
+  df_cou |> 
+  left_join(df_sum) |> 
+  left_join(df_mean) |> 
+  left_join(df_sd) |> 
+  left_join(df_fac) |> 
+  left_join(df_loc |> 
+              select(campagne, idp, lat, lon)
+            )
+
+# Display data
+head(df_agg)
+```
+
+```{r}
+df_loc_g <- 
+  df_agg |> 
+  ungroup() |> 
+  group_by(lat, lon) |> 
+  nest()
+```
+
+
+# Data Exploration
+
+```{r}
+df_clean <- readRDS(here::here("data/tmp/cleaned_raw_data.rds"))
+```
+
+
+## Regional Subset
+
+```{r}
+# Get random region (department)
+set.seed(123)
+reg <- df_clean |> slice_sample(n = 1) |> pull(dep)
+
+# Get regional subset
+df_reg <- df_clean |> dplyr::filter(dep == reg)
+
+# Select variables of interest
+df_reg |> 
+  select(campagne, idp, a, visite, v, c13, x, y) |> 
+  distinct() |> 
+  View()
+```
+
