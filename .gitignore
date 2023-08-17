@@ -4,3 +4,8 @@
 .Ruserdata
 
 data/*
+*.html
+analysis/_freeze/*
+analysis/figures/*
+analysis/render/*
+analysis/.quarto/*

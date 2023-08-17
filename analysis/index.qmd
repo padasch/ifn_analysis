@@ -1,0 +1,19 @@
+---
+title: "Project Description"
+---
+
+# IFN Analysis
+
+Add project description.
+
+## Setup
+
+```{r}
+source("../R/00-setup.R")
+```
+
+## Requirements
+
+```{r}
+sessionInfo()
+```

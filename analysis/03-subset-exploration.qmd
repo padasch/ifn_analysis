@@ -1,0 +1,148 @@
+---
+title: "Subset Exploration"
+---
+
+```{r message=FALSE, warning=FALSE}
+source(here::here("R/00-setup.R"))
+```
+
+## Summary
+
+-   For this subset analysis, we will focus only on sites that were revisited and that have explicit information on the change in circumference (re-measured circumference or indicator why circumference was not re-measured).
+
+## Create Subset
+
+### Load Data
+
+```{r}
+# Get raw data
+data <- f_get_raw_data_list()
+l_raw_data <- data[[1]]
+l_metadata <- data[[2]]
+
+# Wrangle coordinates
+l_raw_data$placette <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
+
+# Get location index
+index <- f_get_location_index(l_raw_data)
+
+# Subset index to sites that were
+# - Visited and measured twice
+# - Visited twice and measured trees only at second visit
+data_clean <- 
+  l_raw_data$arbre |> 
+  inner_join(index, by = c("idp")) |> 
+  filter(
+    (n_visits_loc == 2 & n_visits_tre == 2) |
+    (n_visits_loc == 2 & n_visits_tre == 1 & campagne == v2)
+    )
+
+# Get sites measured first after 2010 because they should have per-tree revisit
+
+```
+
+### Filter Data
+
+```{r}
+
+```
+
+------------------------------------------------------------------------
+
+## Get Clean Dataset
+
+### Load Data
+
+```{r}
+# Get raw data
+data <- f_get_raw_data_list()
+l_raw_data <- data[[1]]
+l_metadata <- data[[2]]
+
+# Wrangle coordinates
+l_raw_data$placette <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
+
+# Get location index
+index <- f_get_location_index(l_raw_data)
+```
+
+### Filter Data
+
+Keep only sites that were visited twice and for which there is tree data.
+
+```{r}
+index_subset <- index |> filter(n_visits_loc == 2, n_visits_tre != 0)
+```
+
+Some sites might have only recorded tree data once during two visits. Reasons are:
+
+-   Old re-visiting strategy (revisits up to 2014) did not re-measure each tree but only gave general assessment of state of plot. Where the entire plot was affected by the same change (no change, removal, mortality), there was only a remark made in the location data.
+
+-   New re-visiting strategy also focused on sampling new trees that were not there during the first visit.
+
+```{r}
+# Get sites for which there was no tree data recorded at second visit
+df_tmp <- 
+  l_raw_data$arbre |> 
+  inner_join(index_subset, by = c("idp")) |> 
+  filter(n_visits_tre == 1) |> 
+  select(idp, campagne, v1, v2) |> 
+  rename(yr_tree_visit = campagne) |>  
+  distinct()
+
+df_new_trees   <- df_tmp |> filter(yr_tree_visit == v2)
+df_old_method  <- df_tmp |> filter(yr_tree_visit == v1)
+```
+
+We want to focus on attaching the state of change for each tree that has not been re-measured during the second visit. For this, we use the information given in the location data on the second visit.
+
+Notes:
+
+-   In most cases, there was no change in tree cover. But in a few cases, we have information that there was an incident that affected the tree cover (given by `incid`) but there is no information on the type of incident (given by `nincid`).
+
+```{r}
+df_tre <- 
+  l_raw_data$arbre |> 
+  filter(idp %in% df_old_method$idp) |> 
+  select(where(~!all(is.na(.)))) # drop all columns with NA
+
+df_loc <- 
+  l_raw_data$placette |> 
+  filter(idp %in% df_old_method$idp,
+         visite == 2) |> 
+  select(where(~!all(is.na(.)))) # drop all columns with NA
+
+cat("Variables with information on second visit: ", paste0(names(df_loc), collapse = ", "))
+
+```
+
+```{r}
+#| layout-nrow: 1
+df_loc$incid   |> table() |> barplot(main = "Count of incid",
+                                     sub  = "Indicator characterizing the intensity of the incident occurring\nin the last 5 years on the point")
+df_loc$prelev5 |> table() |> barplot(main = "Count of prelev5",
+                                     sub  = "Indicator indicating the presence of a partial (1) or total (2) cutting\nof the trees surveyed during the 1st visit")
+```
+
+```{r}
+sites_without_change <- df_loc |> filter(prelev5 == 0, incid == 0)
+```
+
+```{r}
+sites_fully_cut <- df_loc |> filter(prelev5 == 2)
+sites_fully_cut$incid   |> table() |> barplot(main = "Count of incid")
+```
+
+```{r}
+sites_partially_cut  <- df_loc |> filter(prelev5 == 1)
+```
+
+### Clean Data
+
+-   Certain sites in the old sampling scheme
+
+-   For sites from 2005-2014, we have no re-meausrement of the C13 data. Thus, we have to use the location data to see whether these trees were still standing or not, and coalesce the data to a common format where we have two-recordings per tree, indicating whether it was removed, dead, cut at the second visit.
+
+-   Some trees measured in 2005 were actually revisited and each tree's vegetation state was recorded. BUT some trees were not explicitly revisited but just note down as the location being cut, partially cut, not cut.
+
+## Map

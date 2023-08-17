@@ -9,7 +9,9 @@ sapply(
 # Packages
 packages <- c(
   "here", "conflicted",
-  "tidyverse", "ggplot2", "purrr", "ggplot2",
+  "DT", # datatable for interactive tables
+  "tidyverse", "ggplot2", "purrr", 
+  "ggplot2", "ggridges", "patchwork",
   "terra", "leaflet", "sp", "sf"
 )
 
