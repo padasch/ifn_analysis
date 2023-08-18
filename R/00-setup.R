@@ -10,9 +10,14 @@ sapply(
 packages <- c(
   "here", "conflicted",
   "DT", # datatable for interactive tables
-  "tidyverse", "ggplot2", "purrr", 
+  # "multidplyr", # Parallel computing, keep before tidyverse!
+  # "furrr", # Parallel computing
+  "tidyverse", "ggplot2", "purrr",
   "ggplot2", "ggridges", "patchwork",
-  "terra", "leaflet", "sp", "sf"
+  "terra", "leaflet", "sp", "sf",
+  
+  # To facilitate coding:
+  "tictoc", "beepr"
 )
 
 # Install packages not yet installed
@@ -21,7 +26,18 @@ if (any(installed_packages == FALSE)) {
   install.packages(packages[!installed_packages])
 }
 
+## Specifying parallel computing
+# plan (multisession, workers = 9)
+
+# library(multidplyr)
+# library(dplyr, warn.conflicts = FALSE)
+# 
+# cluster <- new_cluster(parallel::detectCores() - 2) # Use all but two cores
+# cluster_library(cluster, "dplyr")
+
 # Packages loading
 invisible(lapply(packages, library, character.only = TRUE))
 conflict_prefer(name = "select", winner = "dplyr")
 conflict_prefer(name = "filter", winner = "dplyr")
+
+
