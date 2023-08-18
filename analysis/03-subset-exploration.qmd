@@ -10,9 +10,37 @@ source(here::here("R/00-setup.R"))
 
 -   For this subset analysis, we will focus only on sites that were revisited and that have explicit information on the change in circumference (re-measured circumference or indicator why circumference was not re-measured).
 
-## Create Subset
+## Set Classification Criteria
 
-### Load Data
+```{r}
+# Classification of Tree Status 
+# Primarily taken by VEGET Variable
+code_veget5 <- 
+  tibble(
+    "0"  = "alive",
+    "1"  = "alive",
+    "2"  = "dead",
+    "5"  = "dead",
+    "A"  = "dead",
+    "C"  = "dead",
+    "M"  = "dead",
+    "T"  = "dead",
+    "6"  = "cut",
+    "7"  = "cut",
+    "N"  = "NA",
+    "NA" = "NA"
+  ) |> 
+    pivot_longer(everything(),
+                 names_to = "lvl",
+                 values_to = "state")
+
+# Classification for human inference
+
+```
+
+## Create Subsets
+
+### Get tree all tree data indexed
 
 ```{r}
 # Get raw data
@@ -24,27 +52,88 @@ l_metadata <- data[[2]]
 l_raw_data$placette <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
 
 # Get location index
-index <- f_get_location_index(l_raw_data)
+# idx_loc  <- f_get_location_index(l_raw_data)
+idx_tre  <- f_get_tree_index(l_raw_data)
+# idx_comb <- left_join(idx_tre, idx_loc, by = "idp")
 
-# Subset index to sites that were
-# - Visited and measured twice
-# - Visited twice and measured trees only at second visit
-data_clean <- 
-  l_raw_data$arbre |> 
-  inner_join(index, by = c("idp")) |> 
-  filter(
-    (n_visits_loc == 2 & n_visits_tre == 2) |
-    (n_visits_loc == 2 & n_visits_tre == 1 & campagne == v2)
-    )
-
-# Get sites measured first after 2010 because they should have per-tree revisit
-
+# Get tree dataframe and attach indeces
+df_treid <- 
+  l_raw_data$arbre |>
+  left_join(idx_tre, by = join_by(idp, a)) |> 
+  mutate(
+    tree_id  = paste0(idp, "_", a),
+    visit_nr = NA,
+    visit_nr = ifelse(revisit_state == "revisited" & campagne == visit_1, 1, visit_nr),
+    visit_nr = ifelse(revisit_state == "revisited" & campagne == visit_2, 2, visit_nr),
+    visit_nr = ifelse(revisit_state == "not_revisited", 1, visit_nr),
+    visit_nr = ifelse(revisit_state == "newly_sampled", 2, visit_nr)
+    ) |>
+  relocate(idp, a, tree_id, campagne, visit_nr,
+           visit_1, visit_2, revisit_state, veget, 
+           veget5, where(is.numeric))
 ```
 
-### Filter Data
+```{r}
+df_loc_wide <- f_widen_location_data(l_raw_data$placette)
+```
+
+### First visits 2010 or after
+
+#### Revisited trees
 
 ```{r}
+# Filter data
+df_2010 <- df_treid |> filter(visit_1 > 2009 & revisit_state == "revisited")
 
+# Make df wide
+vars_location_tree <- f_get_fixed_vars_per_level(level = "location_tree")
+vars_to_keep  <- df_2010 |> select(any_of(vars_location_tree)) |>  names()
+vars_to_widen <- df_2010 |> select(-any_of(vars_location_tree)) |>  names()
+
+df_wide <- 
+  df_2010 |> 
+  # arrange(tree_id) |> slice(1:1000) |> 
+  pivot_wider(
+    id_cols = vars_to_keep,
+    names_from  = visit_nr,
+    values_from = vars_to_widen) |> 
+  select(-where(~all(is.na(.)))) |> 
+  rename_with(~ gsub("_1$", "", .), ends_with("_1")) |> 
+  rename_with(~ gsub("_2$", "5", .), ends_with("_2")) |> 
+  rename(veget5 = veget55)
+  
+# Attach location data and keep only relevant variabes
+irr_vars <- f_get_list_of_irrelevant_vars()
+irr_vars <- c(irr_vars, paste0(irr_vars, "5"))
+
+df_revisited <- 
+  left_join(df_wide, df_loc_wide) |> 
+  select(-any_of(irr_vars))
+
+# Separate dataset into revisited trees that had c13 measured twice
+df_revisited <- df_revisited |> mutate(d_c13 = c13 - c135)
+
+df_rev_once  <- df_revisited |> filter(is.na(d_c13)) 
+df_rev_twice <- df_revisited |> filter(!is.na(d_c13))
+```
+
+##### Trees with one c13 measurement
+
+TODO
+
+##### Trees with two c13 measurements
+
+```{r}
+df_rev_twice 
+```
+
+### Trees that were newly recruited
+
+```{r}
+idx_new <- idx_tre |> filter(revisit_state == "newly-sampled")
+df_new  <- df_sub |> filter(idp %in% idx_new$idp)
+
+time
 ```
 
 ------------------------------------------------------------------------
