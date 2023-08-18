@@ -39,10 +39,6 @@ DT::datatable(l_metadata$lvls, options = list(pageLength = 10))
 DT::datatable(l_metadata$units, options = list(pageLength = 10))
 ```
 
-```{r}
-datatable(l_metadata$metadata |> filter(tolower(variable) %in% names(l_raw_data$arbre)))
-```
-
 ## Data Exploration
 
 ### Summary
