@@ -394,7 +394,7 @@ Notes:
 
 -   This subset shows sites that had no trees measured in the first visit but some trees measured in the second visit. This indicates recruitment of new land.
 
--   BUT not all trees are that small! Some are just above the DBH threshold of 0.24m, some are much bigger (c13 \> 1). This should not be the case for newly recruited trees?
+-   BUT not all trees are that small! Some are just above the c13 threshold of 0.24m, some are much bigger (c13 \> 1). This should not be the case for newly recruited trees?
 
 -   AND it is weird that there should not be any location data measured during the first visit. As shown below, there are revisited sites that hold only information from the second visit, indicating recruitment.
 
@@ -422,7 +422,7 @@ cat("\n # Sites: ", n_s, "  # Site-Years: ", n_sy, "  # Trees: ", n_t, "\n")
 df_loc$v2 |> table() |> 
   barplot(main = "Count of sites that were visited once but recorded as second visit",
           xlab  = "Year of '2nd Visit'")
-df_tre$c13 |> hist(main = "Histogram of DBH measurements", breaks = 50, xlab = "DBH [m]")
+df_tre$c13 |> hist(main = "Histogram of c13 measurements", breaks = 50, xlab = "c13 [m]")
 ```
 
 ### 1 Visit & 2 Tree Data
@@ -518,7 +518,7 @@ cat("# Sites: ", tmp_idx |> filter(v1 > 2009) |> nrow())
 df_tre |> filter(v1 > 2009) |> pull(c13) |> hist(xlab = "DBH [m]")
 ```
 
-Most trees are rather small with a DBH of ca. 0.2-0.4m, which could indicate that these are newly recruited trees, and that the respective sites are turning into forests. Nonetheless, there are quite a few large trees that were assessed the first time during the second visit, which is odd.
+Most trees are rather small with a c13 of ca. 0.2-0.4m, which could indicate that these are newly recruited trees, and that the respective sites are turning into forests. Nonetheless, there are quite a few large trees that were assessed the first time during the second visit, which is odd.
 
 #### Checking the prelev5 == 1 sites
 
@@ -754,20 +754,33 @@ The numbers from the tree-lvl data does not really match the location-lvl data. 
 
 ## All possible cases
 
++------------+------------------------------------------------------------------------------------------+---------+
 | Case - Nr. | Case                                                                                     | IDP     |
-|------------|------------------------------------------------------------------------------------------|---------|
++============+==========================================================================================+=========+
 | 1          | ONE visit, recorded as `visit == 1` AND tree data from that visit                        | 36942   |
++------------+------------------------------------------------------------------------------------------+---------+
 | 4          | ONE visit, recorded as `visit == 2` AND tree data from that visit                        | 605994  |
++------------+------------------------------------------------------------------------------------------+---------+
 | 2          | ONE visit, recorded as `visit == 1` AND tree data from two visits                        | NONE    |
++------------+------------------------------------------------------------------------------------------+---------+
 | 3          | ONE visit, recorded as `visit == 1` AND NO tree data from that visit                     | 126     |
++------------+------------------------------------------------------------------------------------------+---------+
 | 4          | ONE visit, recorded as `visit == 2` AND NO tree data from that visit                     | 10000   |
++------------+------------------------------------------------------------------------------------------+---------+
 | 5          | TWO visits with all first trees recorded again AND WITHOUT new trees recruited           | 1106469 |
++------------+------------------------------------------------------------------------------------------+---------+
 | 6          | TWO visits with all first trees recorded again AND WITH new trees recruited              | 1125552 |
++------------+------------------------------------------------------------------------------------------+---------+
 | 7          | TWO visits with NOT all first-visit-trees recorded again AND WITHOUT new trees recruited | 179     |
++------------+------------------------------------------------------------------------------------------+---------+
 | 8          | TWO visits with NOT all first-visit-trees recorded again AND WITH new trees recruited    | NONE    |
++------------+------------------------------------------------------------------------------------------+---------+
 | 9          | TWO visits with NO first-visit-trees AND WITH new trees recruited at second visit        | 1100040 |
++------------+------------------------------------------------------------------------------------------+---------+
 | 10         | TWO visits with tree data only from first visit                                          | 19      |
++------------+------------------------------------------------------------------------------------------+---------+
 | 10         | TWO visits but with no tree data on both visits                                          | 1000482 |
++------------+------------------------------------------------------------------------------------------+---------+
 
 # old
 
