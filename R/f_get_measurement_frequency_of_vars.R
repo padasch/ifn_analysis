@@ -35,13 +35,14 @@ get_measurement_frequency_of_vars <- function(input, input_type) {
       filter(n_visits > 1) |> 
       nest() |> 
       ungroup()
+    
   } else {
     stop("Invalid Input: ", deparse(substitute(input)))
   }
   
   # Run assessment
   message(
-    "\nAssessing variable sampling frequency for:", (deparse(substitute(input))),
+    "\nAssessing variable sampling frequency for: ", (deparse(substitute(input))),
     "\n--------------------------------------------------------------------------"
     )
   
@@ -66,30 +67,66 @@ get_measurement_frequency_of_vars <- function(input, input_type) {
       pull(results) |> 
       unique()
     
-    if (length(var_tmp) == 1) {
-      
-      if (var_tmp == "changes_between_visits") {
-        sampling_frequency <- "changes"
-        sampling_strategy  <- "changes_between_visits"
-      } else {
-        sampling_frequency <- "constant"
-        sampling_strategy  <- var_tmp
-      }
-    } else {
+    cat("\t", var_tmp)
+    
+    if ("changes_between_visits" %in% var_tmp) {
       sampling_frequency <- "changes"
       sampling_strategy  <- "changes_between_visits"
+      
+    } else {
+      
+      sampling_frequency <- "constant"
+      
+      if (all("same_both_visits" == var_tmp)) {
+      sampling_strategy  <- "same_both_visits"
+      }
+      
+      if (all(c("only_1st_visit", "same_both_visits") %in% var_tmp) |
+          all(c("only_1st_visit") %in% var_tmp)) {
+        
+        sampling_strategy  <- "only_1st_visit"
+      }
+      
+      if (all(c("only_2nd_visit", "same_both_visits") %in% var_tmp) |
+          all(c("only_2nd_visit") %in% var_tmp)) {
+        
+        sampling_strategy  <- "only_1st_visit"
+      }
+      
+      if (all(c("only_1st_visit", "only_2nd_visit") %in% var_tmp)) {
+        
+        sampling_strategy  <- "at_first_sight"
+      }
+      
     }
     
     i_df <- 
       tibble(var = var,
              sampling_frequency = sampling_frequency,
-             sampling_strategy = sampling_strategy
+             sampling_strategy  = sampling_strategy,
+             sampling_vars      = paste0(var_tmp, collapse = ", ")
              )
     
     df_fin <- rbind(df_fin, i_df)
   }
   
-  df_fin <- df_fin |> arrange(sampling_frequency, sampling_strategy)
+  # # For all variables that have only been measured in sites that were visited
+  # # once and were thus excluded from the routine above:
+  # vars_left <- input |> select(-df_fin$var, -idp, -a) |> names()
+  # message("[!] Attaching variables outside of routine: ", 
+  #         paste(vars_left, collapse = ", "))
+  # 
+  # df_fin <-
+  #   df_fin  |>  
+  #   add_row(var = vars_left,
+  #           sampling_frequency = "constant",
+  #           sampling_strategy  = "only_1st_visit")
+    
+  # Clean df and return it
+   df_out <- 
+     df_fin |> 
+     select(var, sampling_frequency, sampling_strategy) |> 
+     arrange(sampling_frequency, sampling_strategy)
   
-  return(df_fin)
+  return(df_out)
 }
