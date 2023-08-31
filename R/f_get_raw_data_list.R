@@ -1,11 +1,12 @@
-f_get_raw_data_list <- function(variables) {
+f_get_raw_data_list <- function() {
 
-  # Metadata List
+  # Metadata List --------------------------------------------------------------
   l_metadata <- list()
   
   l_metadata[["metadata"]] <- 
     read_csv2(
       here::here("data/raw/export_dataifn_2005_2021/metadonnees.csv"), 
+      show_col_types = FALSE,
       skip = 17,    # Skip initial descriptions
       n_max = 163,  # Only load variable descriptions
     ) |> 
@@ -17,6 +18,7 @@ f_get_raw_data_list <- function(variables) {
   l_metadata[["units"]] <- 
     read_csv2(
       here::here("data/raw/export_dataifn_2005_2021/metadonnees.csv"), 
+      show_col_types = FALSE,
       skip = 184,    # Skip initial descriptions and metadata
       n_max = 224,  # Only load unit descriptions
       
@@ -32,6 +34,7 @@ f_get_raw_data_list <- function(variables) {
   l_metadata[["lvls"]] <- 
     read_csv2(
       here::here("data/raw/export_dataifn_2005_2021/metadonnees.csv"), 
+      show_col_types = FALSE,
       skip = 412,    # Skip metadata and units
     ) |> 
     rename(variable = "// Unité",
@@ -40,13 +43,13 @@ f_get_raw_data_list <- function(variables) {
            description = "Définition") |> 
     arrange(variable)
   
-  # Load all datafiles into a list
+  # Load all datafiles into a list ---------------------------------------------
   l_raw_data <- list()
   
   # Data directory
   dr_data <- here::here("data/raw/export_dataifn_2005_2021/")
   
-  for (file in list.files(dr_data, pattern = ".csv", include.dirs = FALSE)){
+  for (file in list.files(dr_data, pattern = ".csv", include.dirs = FALSE)) {
     
     # Get name and path for data
     name <- file |> stringr::str_to_lower() |> stringr::str_remove(".csv")
@@ -58,7 +61,11 @@ f_get_raw_data_list <- function(variables) {
     # Save data to list
     l_raw_data[[name]] <-
       read_delim(
-        path, delim = ";", escape_double = FALSE, trim_ws = TRUE,
+        path, 
+        delim = ";", 
+        escape_double = FALSE,
+        trim_ws = TRUE,
+        show_col_types = FALSE,
         col_types = cols(XL = col_character(),  # Load coordinates as char
                          YL = col_character())  # to avoid automatic rounding
       )
