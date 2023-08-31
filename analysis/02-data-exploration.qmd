@@ -5,7 +5,7 @@ title: "Data Exploration"
 ## Load Packages
 
 ```{r message=FALSE, warning=FALSE}
-source(here::here("R/00-setup.R"))
+source(here::here("R/_setup.R"))
 ```
 
 ## Loading Data
