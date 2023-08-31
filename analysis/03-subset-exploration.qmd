@@ -28,7 +28,8 @@ code_veget5 <-
     "6"  = "cut",
     "7"  = "cut",
     "N"  = NA,
-    "NA" = NA
+    "NA" = NA,
+    "Z"  = "alive - injured"
   ) |> 
     pivot_longer(everything(),
                  names_to = "lvl",
@@ -44,38 +45,56 @@ code_veget5 <-
 
 ## Create Subsets
 
-### Get tree all tree data indexed
+### Create dataset with one tree per row
 
 ```{r}
 # Get raw data
-data <- f_get_raw_data_list()
+data <- suppressWarnings(f_get_raw_data_list())
 l_raw_data <- data[[1]]
 l_metadata <- data[[2]]
 
 # Wrangle coordinates
-l_raw_data$placette <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
+df_loc <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
+```
 
-# Get location index
-# idx_loc  <- f_get_location_index(l_raw_data)
-idx_tre  <- f_get_tree_index(l_raw_data)
-# idx_comb <- left_join(idx_tre, idx_loc, by = "idp")
+
+```{r}
+# Get tree sampling index
+idx_tree  <- f_get_tree_index(l_raw_data)
 
 # Get tree dataframe and attach indeces
-df_treid <- 
+df_tree <- 
   l_raw_data$arbre |>
-  left_join(idx_tre, by = join_by(idp, a)) |> 
+  left_join(idx_tree, by = join_by(idp, a)) |> 
   mutate(
     tree_id  = paste0(idp, "_", a),
-    visit_nr = NA,
-    visit_nr = ifelse(revisit_state == "revisited" & campagne == visit_1, 1, visit_nr),
-    visit_nr = ifelse(revisit_state == "revisited" & campagne == visit_2, 2, visit_nr),
-    visit_nr = ifelse(revisit_state == "not_revisited", 1, visit_nr),
-    visit_nr = ifelse(revisit_state == "newly_sampled", 2, visit_nr)
+    visite = NA,
+    visite = ifelse(revisit_state == "revisited" & campagne == visit_1, 1, visite),
+    visite = ifelse(revisit_state == "revisited" & campagne == visit_2, 2, visite),
+    visite = ifelse(revisit_state == "not_revisited", 1, visite),
+    visite = ifelse(revisit_state == "newly_sampled", 2, visite)
     ) |>
-  relocate(idp, a, tree_id, campagne, visit_nr,
+  relocate(idp, a, tree_id, campagne, visite,
            visit_1, visit_2, revisit_state, veget, 
            veget5, where(is.numeric))
+```
 
+```{r}
+# Make wide location dataset
+# Get dataframes stating which variable is sampled how often and when
+loc_vars  <- get_measurement_frequency_of_vars(df_loc,  "location")
+tree_vars <- get_measurement_frequency_of_vars(df_tree, "tree")
+
+# Widen dataframes
+df_loc_wide  <- widen_dataframe(df_loc, loc_vars)
+df_tree_wide <- widen_dataframe(df_tree, tree_vars)
+
+# Combine dataframes to one large wide one with one tree per row
+
+```
+
+
+```{r}
 # Attach information on vegetation state
 df_treid <- 
   df_treid |> 
@@ -86,9 +105,98 @@ df_treid <-
             by = join_by(veget5))
 ```
 
+### Break location data to tree-level
+
 ```{r}
 df_loc_wide <- f_widen_location_data(l_raw_data$placette)
 ```
+
+### Widen data to one tree per row
+
+
+# --- WIP
+
+I wanted to finally create a uniform approach to widening the tree data but I got stuck with not knowing thiwch variables can be extended and which ones not... Really not sure if it important for going forward to differentiate this. Mostly the data is NA anywas and can be ignored? So, I should just continue with my subset analysis and see if everything works as expected there?
+
+When getting back to this. First try to rerun the code and check if it actually works. I think adding the 'espar' variable to the tree-level data breaks things. Maybe that would then actually be 'location' data. But then again, I should just create a list that I know has to stay constant. And for everything less certain, we widen the data and drop the NAs.
+
+```{r}
+# Select variables to widen, to drop, to keep
+vars_location_tree <- f_get_fixed_vars_per_level(level = "location_tree")
+vars_to_keep       <- df_subset |> select( any_of(vars_location_tree)) |>  names()
+vars_to_widen      <- df_subset |> select(-any_of(vars_location_tree)) |>  names()
+
+# Widen dataframe
+df_tre_wide <- 
+  df_treid |> 
+  pivot_wider(
+    id_cols = vars_to_keep,
+    names_from  = visit_nr,
+    values_from = vars_to_widen) |> 
+  select(-where(~all(is.na(.))))
+
+# Clean up data frame
+## For trees that were sampled the first time in the second campaign, there is 
+## the variable veget_2 included (state of vegetation at first sight but second
+## sampling campaign). This information can be simply merged into veget_1 without
+## loosing information. Also overwrite the state variable for second visit to be 
+## the same as for the first visit because, there will be no second visit, and it
+## is the latest knowledge on the state. The same applies for "tree_status" variable.
+newly_sampled_rows <- df_tre_wide$revisit_state == "newly_sampled"
+
+df_tre_wide$veget_1[newly_sampled_rows]        <- df_tre_wide$veget_2[newly_sampled_rows]
+df_tre_wide$veget5_2[newly_sampled_rows]       <- df_tre_wide$veget_2[newly_sampled_rows]
+df_tre_wide$tree_status_1[newly_sampled_rows]  <- df_tre_wide$tree_status_2[newly_sampled_rows]
+df_tre_wide$tree_status5_2[newly_sampled_rows] <- df_tre_wide$tree_status_2[newly_sampled_rows]
+
+## Clean up names
+df_tre_wide_clean <- 
+  df_tre_wide |> 
+  select(-veget_2, -tree_status_2) |> 
+  rename_with(~ gsub("_1$", "_v1", .), ends_with("_1")) |>
+  rename_with(~ gsub("_2$", "_v2", .), ends_with("_2")) |> 
+  rename(veget_v2 = veget5_v2,
+         tree_status_v2 = tree_status5_v2)
+
+## Quality check if widening worked: No tree_id should be doubled:
+qc <- length(unique(df_tre_wide_clean$tree_id)) == nrow(df_tre_wide_clean)
+if (!qc) {stop("Duplicated tree_id in wide dataframe!")}
+
+# Attach location data and keep only relevant variables
+irr_vars <- f_get_list_of_irrelevant_vars()
+irr_vars <- c(irr_vars, paste0(irr_vars, "_v2"))
+
+df_comb <- 
+  left_join(df_tre_wide_clean, 
+            df_loc_wide,
+            by = join_by(idp)) |> 
+  select(-any_of(irr_vars))
+
+# Attach new variables 
+df_fin <- 
+  df_comb |> 
+  mutate(
+    
+    # TODO ADD VOLUME
+    # TODO ADD IR5 (increment grown within past 5 years)
+    
+    # Diameter
+    dbh_v1 = c13_v1 / pi,
+    dbh_v2 = c13_v2 / pi,
+    
+    # Basal Area
+    ba_v1  = pi * ( dbh_v1 / 2 ) ^ 2,
+    ba_v2  = pi * ( dbh_v2 / 2 ) ^ 2,
+    
+    # Changes
+    d_c13  = c13_v2 - c13_v1,
+    d_htot = htot_v2 - htot_v1,
+    d_dbh  = dbh_v2 - dbh_v1,
+    d_ba   = ba_v2  - ba_v1
+    )
+```
+
+# --- WIP
 
 ### Filter for first visits 2010 or after
 
@@ -496,101 +604,3 @@ knitr::knit_exit()
 # Subset Analysis
 
 # NO RENDER BELOW ---
-
-## Get Clean Dataset
-
-### Load Data
-
-```{r}
-# Get raw data
-data <- f_get_raw_data_list()
-l_raw_data <- data[[1]]
-l_metadata <- data[[2]]
-
-# Wrangle coordinates
-l_raw_data$placette <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
-
-# Get location index
-index <- f_get_location_index(l_raw_data)
-```
-
-### Filter Data
-
-Keep only sites that were visited twice and for which there is tree data.
-
-```{r}
-index_subset <- index |> filter(n_visits_loc == 2, n_visits_tre != 0)
-```
-
-Some sites might have only recorded tree data once during two visits. Reasons are:
-
--   Old re-visiting strategy (revisits up to 2014) did not re-measure each tree but only gave general assessment of state of plot. Where the entire plot was affected by the same change (no change, removal, mortality), there was only a remark made in the location data.
-
--   New re-visiting strategy also focused on sampling new trees that were not there during the first visit.
-
-```{r}
-# Get sites for which there was no tree data recorded at second visit
-df_tmp <- 
-  l_raw_data$arbre |> 
-  inner_join(index_subset, by = c("idp")) |> 
-  filter(n_visits_tre == 1) |> 
-  select(idp, campagne, v1, v2) |> 
-  rename(yr_tree_visit = campagne) |>  
-  distinct()
-
-df_new_trees   <- df_tmp |> filter(yr_tree_visit == v2)
-df_old_method  <- df_tmp |> filter(yr_tree_visit == v1)
-```
-
-We want to focus on attaching the state of change for each tree that has not been re-measured during the second visit. For this, we use the information given in the location data on the second visit.
-
-Notes:
-
--   In most cases, there was no change in tree cover. But in a few cases, we have information that there was an incident that affected the tree cover (given by `incid`) but there is no information on the type of incident (given by `nincid`).
-
-```{r}
-df_tre <- 
-  l_raw_data$arbre |> 
-  filter(idp %in% df_old_method$idp) |> 
-  select(where(~!all(is.na(.)))) # drop all columns with NA
-
-df_loc <- 
-  l_raw_data$placette |> 
-  filter(idp %in% df_old_method$idp,
-         visite == 2) |> 
-  select(where(~!all(is.na(.)))) # drop all columns with NA
-
-cat("Variables with information on second visit: ", paste0(names(df_loc), collapse = ", "))
-
-```
-
-```{r}
-#| layout-nrow: 1
-df_loc$incid   |> table() |> barplot(main = "Count of incid",
-                                     sub  = "Indicator characterizing the intensity of the incident occurring\nin the last 5 years on the point")
-df_loc$prelev5 |> table() |> barplot(main = "Count of prelev5",
-                                     sub  = "Indicator indicating the presence of a partial (1) or total (2) cutting\nof the trees surveyed during the 1st visit")
-```
-
-```{r}
-sites_without_change <- df_loc |> filter(prelev5 == 0, incid == 0)
-```
-
-```{r}
-sites_fully_cut <- df_loc |> filter(prelev5 == 2)
-sites_fully_cut$incid   |> table() |> barplot(main = "Count of incid")
-```
-
-```{r}
-sites_partially_cut  <- df_loc |> filter(prelev5 == 1)
-```
-
-### Clean Data
-
--   Certain sites in the old sampling scheme
-
--   For sites from 2005-2014, we have no re-meausrement of the C13 data. Thus, we have to use the location data to see whether these trees were still standing or not, and coalesce the data to a common format where we have two-recordings per tree, indicating whether it was removed, dead, cut at the second visit.
-
--   Some trees measured in 2005 were actually revisited and each tree's vegetation state was recorded. BUT some trees were not explicitly revisited but just note down as the location being cut, partially cut, not cut.
-
-## Map
