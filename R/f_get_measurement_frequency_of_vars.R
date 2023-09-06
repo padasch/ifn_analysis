@@ -90,7 +90,7 @@ get_measurement_frequency_of_vars <- function(input, input_type) {
       if (all(c("only_2nd_visit", "same_both_visits") %in% var_tmp) |
           all(c("only_2nd_visit") %in% var_tmp)) {
         
-        sampling_strategy  <- "only_1st_visit"
+        sampling_strategy  <- "only_2nd_visit"
       }
       
       if (all(c("only_1st_visit", "only_2nd_visit") %in% var_tmp)) {
