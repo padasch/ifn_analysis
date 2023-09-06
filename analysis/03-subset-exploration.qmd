@@ -10,9 +10,9 @@ source(here::here("R/_setup.R"))
 
 -   For this subset analysis, we will focus only on sites that were revisited and that have explicit information on the change in circumference (re-measured circumference or indicator why circumference was not re-measured).
 
-## Create Subsets
+## Create Clean Dataset
 
-### Create dataset with one tree per row
+### Expand data to one tree per row
 
 ```{r}
 # Get raw data
@@ -23,7 +23,6 @@ l_metadata <- data[[2]]
 # Wrangle coordinates
 df_loc <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
 ```
-
 
 ```{r}
 # Get tree sampling index
@@ -46,7 +45,7 @@ df_tree <-
            veget5, where(is.numeric))
 ```
 
-```{r}
+```{r, eval=FALSE}
 # Make wide location dataset (CHUNK TAKES ABOUT 6 MINUTES TO RUN!)
 # Start Timer
 tic()
@@ -79,37 +78,123 @@ df_comb <-
 # End Timer
 toc()
 beep(2)
+
+# Save data
+load_or_save_latest_file("df_comb", "save")
 ```
 
+```{r}
+# Load data
+load_or_save_latest_file("df_comb", "load")
+head(df_comb)
+```
+
+
+### Attach tree information
+
+#### Attach tree state information
+```{r}
+# Get key-value dictionary
+tree_state_dict <- get_tree_state_dictionary()
+
+# Attach dictionary
+df_comb_updated <- 
+  df_comb |> 
+  left_join(
+    tree_state_dict |> 
+      rename(veget5 = ign_code,
+             tree_state_2 = tree_state,
+             mode_of_death_1 = mode_of_death),
+    by = join_by(veget5)) |> 
+  left_join(
+    tree_state_dict |> 
+      rename(veget = ign_code,
+             tree_state_1 = tree_state,
+             mode_of_death_2 = mode_of_death),
+    by = join_by(veget))
+```
+
+#### Attach tree class information
+```{r}
+# Get key-class dictionary
+tree_class_dict <- get_tree_class_dictionary(l_raw_data, l_metadata)
+
+# Attach dictionary
+df_comb_updated <- 
+  df_comb_updated |> 
+  left_join(tree_class_dict |> 
+              rename(espar = lvl_french) |> 
+              mutate(tree_class = as.factor(tree_class)),
+            by = join_by(espar))
+```
+
+### Filter for relevant trees
+```{r}
+df_comb_filtered <- 
+  df_comb_updated |> filter(
+    # Remove trees that have not been revisited
+    revisit_state != "not_revisited", 
+    
+    # Remove trees that have no first circumference measurement
+    !is.na(c13_1)
+)
+```
+
+### Attach influence information
+#### Attach nature influence
+
+```{r} 
+# Make temporary dataframe
+df_tmp <- df_comb
+
+# DEBUG
+set.seed(123) 
+df_tmp <- df_comb |> slice_sample(n = 200000)
+
+# Get environmental variables
+env_vars <- get_vars("nature")
+
+# Run code - takes very long!
+tic()
+
+df_comb_nature <- 
+  df_tmp |> 
+  nest(data = c(tree_id, env_vars)) |> 
+  mutate(env_impact = map(data, ~get_nature_impact_information(.),
+                          .progress = TRUE)) |> 
+  select(env_impact) |> 
+  unnest(env_impact) |> 
+  right_join(df_tmp |> select(-env_vars), by = join_by(tree_id))
+  
+toc()
+beep()
+
+# Save data
+load_or_save_latest_file("df_comb_nature", "save")
+```
+
+#### Attach human influence
+```{r}
+
+```
+
+### Calculation of biomass changes
+
+- deltas:
+  -   For dead trees
+    -   If they have a second c13 measurement, take that as negative
+    -   If they have no second c13 measurement, take first measurement as negative
+  - For cut trees
+    -   If they have no second c13 measurement, take first measurement as negative
+  - For alive trees
+    -   Take second minus first measurement
 
 # --- WIP
 
 ### Classifications of Tree Status, Class, Human / Nature Influence
 
 ```{r}
-# Classification of Tree Status 
-# Primarily taken by VEGET Variable
-code_veget5 <- 
-  tibble(
-    "0"  = "alive",
-    "1"  = "alive",
-    "2"  = "dead",
-    "5"  = "dead",
-    "A"  = "dead",
-    "C"  = "dead",
-    "M"  = "dead",
-    "T"  = "dead",
-    "6"  = "cut",
-    "7"  = "cut",
-    "N"  = NA,
-    "NA" = NA,
-    "Z"  = "alive - injured"
-  ) |> 
-    pivot_longer(everything(),
-                 names_to = "lvl",
-                 values_to = "tree_status") |> 
-  mutate(lvl = as.factor(lvl),
-         tree_status = as.factor(tree_status))
+
 
 # Classification for human influence
 
