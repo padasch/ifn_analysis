@@ -1,4 +1,9 @@
-get_lookup_tree_class_for_espar <- function(l_raw_data, l_metadata) {
+get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
+  
+  # Wifi connection check
+  if (!pingr::is_online()) {
+    stop("⚠️ get_tree_class_dictionary() does not work without internet connection!\n")
+  } 
   
   # Get all species in the tree dataset
   tree_species_french <- 
