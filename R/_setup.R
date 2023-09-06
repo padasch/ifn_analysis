@@ -1,11 +1,3 @@
-# R functions
-sapply(
-  list.files(here::here("R"), 
-             pattern = "f_", 
-             full.names = TRUE), 
-  source
-  )
-
 # Packages
 packages <- c(
   "here", "conflicted",
@@ -19,6 +11,15 @@ packages <- c(
   # To facilitate coding:
   "tictoc", "beepr"
 )
+
+# R functions
+sapply(
+  list.files(here::here("R"), 
+             pattern = "f_", 
+             full.names = TRUE), 
+  source
+)
+
 
 # Install packages not yet installed
 installed_packages <- packages %in% rownames(installed.packages())
