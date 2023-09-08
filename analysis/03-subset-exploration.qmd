@@ -400,8 +400,8 @@ df_comb_qc$species_lat |> table() |> sort(decreasing = T) |> head(10)
 
 ```{r}
 # Subset for given species
-selected_species <- "Quercus robur"
-species_classification_level <- "species_lat"
+selected_species <- "Quercus"
+species_classification_level <- "genus_lat"
 
 # Could be made more flexible with family and other levels
 if (str_detect(species_classification_level, "species")) {
