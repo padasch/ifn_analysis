@@ -1,12 +1,24 @@
 # Packages
 packages <- c(
+  
+  # Workspace management
   "here", "conflicted",
+  
+  # HTML Output
   "DT", # datatable for interactive tables
+  
+  # Parallel computing
   # "multidplyr", # Parallel computing, keep before tidyverse!
   # "furrr", # Parallel computing
-  "tidyverse", "ggplot2", "purrr",
+  
+  # Data Wrangling
+  "tidyverse", "purrr",
+  
+  # Plotting
   "ggplot2", "ggridges", "patchwork",
-  "terra", "leaflet", "sp", "sf",
+  
+  # Spatial data
+  "terra", "leaflet", "sp", "sf", "raster",
   
   # To facilitate coding:
   "tictoc", "beepr"
