@@ -1,5 +1,7 @@
 ---
 title: "Subset Exploration"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r message=FALSE, warning=FALSE}
@@ -13,14 +15,13 @@ source(here::here("R/_setup.R"))
 ## Create Clean Dataset
 
 ### Expand data to one tree per row
-
 ```{r}
 # Get raw data
 data <- suppressWarnings(f_get_raw_data_list())
 l_raw_data <- data[[1]]
 l_metadata <- data[[2]]
 
-# Wrangle coordinates
+# Wrangle coordinates 
 df_loc <- f_attach_wgs_coords_to_raw_placette(l_raw_data$placette)
 ```
 
@@ -46,9 +47,7 @@ df_tree <-
 ```
 
 ```{r, eval=FALSE}
-# Make wide location dataset (CHUNK TAKES ABOUT 6 MINUTES TO RUN!)
-# Start Timer
-tic()
+# Make wide location dataset
 # Get dataframes stating which variable is sampled how often and when
 loc_vars  <- get_measurement_frequency_of_vars(df_loc,  "location")
 tree_vars <- get_measurement_frequency_of_vars(df_tree, "tree")
@@ -57,27 +56,65 @@ tree_vars <- get_measurement_frequency_of_vars(df_tree, "tree")
 df_loc_wide  <- widen_dataframe(df_loc,  loc_vars,  "location")
 df_tree_wide <- widen_dataframe(df_tree, tree_vars, "tree")
 
-# input <- df_loc;  df_vars <- loc_vars;  data_type <- "location"
-# input <- df_tree; df_vars <- tree_vars; data_type  <- "tree"
-
 # Quality check for duplicates:
 if (length(unique(df_loc_wide$idp)) != nrow(df_loc_wide)) {stop("QC FAILED!")}
 if (length(unique(df_tree_wide$tree_id)) != nrow(df_tree_wide)) {stop("QC FAILED!")}
+```
 
+### Merge datastructure for newly sampled trees
+```{r, eval=FALSE}
+# Correction for newly grown trees. Above, their state is assigned to their first
+# measurement but that occured during the second visit. To keep data consistent,
+# we have to add the information on newly_sampled trees to the second visit
+
+# Get index for newly sampled trees
+idx <- which(df_tree_wide$revisit_state == "newly_sampled")
+
+# Split datasets
+df_split_new  <- df_tree_wide[idx, ]
+df_split_keep <- df_tree_wide[-idx, ]
+
+# Overwrite data so that the variables have the same meaning like revisited trees
+
+# - Overwrite veget with veget5 (veget is all NA for newly sampled trees)
+# df_split_new$veget5 <- df_split_new$veget
+# df_split_new$veget  <- NA
+
+# - Overwrite circumference growth
+df_split_new$c13_1 <- df_split_new$c13_2
+df_split_new$c13_1 <- 0
+
+# - Overwrite sampling campagnes and visits
+df_split_new$campagne_1 <- df_split_new$campagne_2 - 5
+
+df_split_new$visit_1 <- df_split_new$campagne_1
+df_split_new$visit_2 <- df_split_new$campagne_2
+
+df_split_new$visite_1 <- 1
+df_split_new$visite_2 <- 2
+
+# - No need to overwrite additional variables because they are all NA anyways
+# df_split_new |> select(where(~!all(is.na(.)))) |> names()
+
+# Update big dataframe
+df_tree_wide_cleaned <- bind_rows(df_split_new, df_split_keep)
+```
+
+```{r, eval=FALSE}
 # Combine and clean dataframes to one large wide one with one tree per row
 vars_clean   <- c("idp", "visite_1", "visite_2", "campagne_1", "campagne_2")
-df_loc_wide  <- df_loc_wide  |> mutate(across(all_of(vars_clean), factor))
-df_tree_wide <- df_tree_wide |> mutate(across(all_of(vars_clean), factor))
+df_loc_wide_fin  <- df_loc_wide  |> mutate(across(all_of(vars_clean), factor))
+df_tree_wide_fin <- df_tree_wide_cleaned |> mutate(across(all_of(vars_clean), factor))
 
 df_comb <- 
   left_join(
-    df_tree_wide, 
-    df_loc_wide, 
-    by = vars_clean)
+    df_tree_wide_fin, 
+    df_loc_wide_fin, 
+    by = c(vars_clean))
 
-# End Timer
-toc()
-beep(2)
+# Fixing some factorial variables
+df_comb$campagne_1 <- as.double(as.character(df_comb$campagne_1))
+df_comb$campagne_2 <- as.double(as.character(df_comb$campagne_2))
 
 # Save data
 load_or_save_latest_file("df_comb", "save")
@@ -89,29 +126,35 @@ load_or_save_latest_file("df_comb", "load")
 head(df_comb)
 ```
 
-
 ### Attach tree information
-
 #### Attach tree state information
 ```{r}
 # Get key-value dictionary
 tree_state_dict <- get_tree_state_dictionary()
 
 # Attach dictionary
-df_comb_updated <- 
+df_comb_tree_state <- 
+  
+  # Take updated dataframe
   df_comb |> 
-  left_join(
-    tree_state_dict |> 
-      rename(veget5 = ign_code,
-             tree_state_2 = tree_state,
-             mode_of_death_1 = mode_of_death),
-    by = join_by(veget5)) |> 
+  
+  # Attach information on state of tree at first visit
   left_join(
     tree_state_dict |> 
       rename(veget = ign_code,
              tree_state_1 = tree_state,
+             alive_but_injured_1 = alive_but_injured,
+             mode_of_death_1 = mode_of_death),
+    by = join_by(veget)) |> 
+  
+  # Attach information on state of tree at second visit
+  left_join(
+    tree_state_dict |> 
+      rename(veget5 = ign_code,
+             tree_state_2 = tree_state,
+             alive_but_injured_2 = alive_but_injured,
              mode_of_death_2 = mode_of_death),
-    by = join_by(veget))
+    by = join_by(veget5)) 
 ```
 
 #### Attach tree class information
@@ -120,8 +163,8 @@ df_comb_updated <-
 tree_class_dict <- get_tree_class_dictionary(l_raw_data, l_metadata)
 
 # Attach dictionary
-df_comb_updated <- 
-  df_comb_updated |> 
+df_comb_tree_class <- 
+  df_comb_tree_state |> 
   left_join(tree_class_dict |> 
               rename(espar = lvl_french) |> 
               mutate(tree_class = as.factor(tree_class)),
@@ -130,15 +173,862 @@ df_comb_updated <-
 
 ### Filter for relevant trees
 ```{r}
-df_comb_filtered <- 
-  df_comb_updated |> filter(
-    # Remove trees that have not been revisited
-    revisit_state != "not_revisited", 
+df_comb_filtered <-
+  df_comb_tree_class |> 
+  filter(
     
-    # Remove trees that have no first circumference measurement
-    !is.na(c13_1)
+    # Data for first visits before 2009 is not cleaned yet, so removing it for now
+    campagne_1 > 2009,
+    
+    # Keep revisited trees with a first c13 measurement
+    (revisit_state == "revisited" & !is.na(c13_1)) | 
+      
+    # Keep trees that have been newly sampled and measured
+    (revisit_state == "newly_sampled" & !is.na(c13_2)),
+    
+    # Remove trees that have been dead or cut at first visit already
+    !(revisit_state == "revisited" & (tree_state_1 %in% c("dead", "cut"))),
+    
+    # Remove trees that have not been found again for some reason
+    !(revisit_state == "revisited" & veget5 == "N"),
+    
+    # Keep only trees that belong to the target stand
+    !(identical(cible, NA) | identical(cible, 0)),
+    
+    # Remove trees that are missing xy-coordinates
+    !is.na(lat),
+    !is.na(lon)
+    
+    # Trees that were fully measured and not simplified
+    # simplif == 0
+    ) 
+```
+
+### Attach spatial information
+```{r}
+# Get temporary dataframe
+df_tmp <- df_comb_filtered
+
+# Get information on region, based on coordinates
+df_geo <- match_coordinates_to_french_region(df_tmp)
+
+# Match region code number with region name
+df_comb_geo <- 
+  left_join(
+    df_tmp,
+    df_geo |> 
+      rename(dep = CC_2,
+             dep_name = NAME_2) |> 
+      select(dep, dep_name) |> 
+      distinct(),
+    by = join_by(dep)
+  )
+```
+
+### Calculate Shadow Growth of Circumference
+
+#### Cut Trees
+```{r}
+# Create temporary df for this section
+df_tmp <- df_comb_geo
+
+# Split datasets into cut and not cut
+idx <- which(df_tmp$tree_state_2 == "cut")
+
+# Do splitting only if index is not empty
+if (length(idx) != 0) {
+  
+  df_edit <- df_tmp[idx, ] 
+  df_keep <- df_tmp[-idx, ]  
+  
+  # Calculate the circumference achieved until a tree was cut
+  # Calculation based on `ifn_wood_harvest_removal.pdf`
+  # Drop data if growth could not be back-calculated
+  df_edit <- 
+    df_edit |> 
+    mutate(c13_2 = c13_1 + ir5 / 2,
+           shadow_growth = TRUE) |> 
+    drop_na(c13_2)
+  
+  # Combine datasets again
+  df_comb_shadow_cut <- 
+    bind_rows(
+      df_edit,
+      df_keep |> mutate(shadow_growth = FALSE)
+      )
+} else {
+  df_comb_shadow_cut <- df_tmp
+}
+```
+
+#### Not re-measured dead trees
+```{r}
+# Create temporary df
+df_tmp <- df_comb_shadow_cut
+
+# Split datasets into cut and not cut
+idx <- which(df_tmp$tree_state_2 == "dead" & is.na(df_tmp$c13_2))
+
+# Do splitting only if index is not empty
+if (length(idx) != 0) {
+  
+  df_edit <- df_tmp[idx, ] 
+  df_keep <- df_tmp[-idx, ]  
+  
+  # Calculate the circumference achieved until a tree was cut
+  # Calculation based on `ifn_wood_harvest_removal.pdf`
+  # Drop data if growth could not be back-calculated
+  df_edit <- 
+    df_edit |> 
+    mutate(c13_2 = c13_1 + ir5 / 2,
+           shadow_growth = TRUE) |> 
+    drop_na(c13_2)
+  
+  # Combine datasets again
+  df_comb_shadow_dead <- 
+    bind_rows(
+      df_edit,
+      df_keep |> mutate(shadow_growth = FALSE))
+} else {
+  df_comb_shadow_dead <- df_tmp
+}
+```
+
+#### Not re-measured alive trees
+```{r}
+# Create temporary df
+df_tmp <- df_comb_shadow_dead
+
+# Split datasets into trees that survived
+idx <- which(df_tmp$tree_state_2 == "alive" & is.na(df_tmp$c13_2))
+
+# Do splitting only if index is not empty
+if (length(idx) != 0) {
+  
+  df_edit <- df_tmp[idx, ] 
+  df_keep <- df_tmp[-idx, ]  
+  
+  # Calculate the circumference achieved until a tree was cut
+  # Calculation based on `ifn_wood_harvest_removal.pdf`
+  # Drop data if growth could not be back-calculated
+  df_edit <- 
+    df_edit |> 
+    mutate(c13_2 = c13_1 + ir5,
+           shadow_growth = TRUE) |> 
+    drop_na(c13_2)
+  
+  # Combine datasets again
+  df_comb_shadow_alive <- 
+    bind_rows(
+      df_edit,
+      df_keep |> mutate(shadow_growth = FALSE))
+} else {
+  df_comb_shadow_alive <- df_tmp
+}
+```
+
+```{r}
+# QC
+df_comb_shadow_alive |> 
+  filter(revisit_state == "newly_sampled") |> 
+  relocate(c13_1, c13_2, tree_state_1, tree_state_2, revisit_state, tree_id)
+```
+
+### Calculate growth, biomass, etc.
+```{r}
+# Get temporary df
+df_tmp <- df_comb_shadow_alive
+
+# Attache size related variables
+df_comb_size <- 
+  df_tmp |> 
+  # Attach size related variables
+  mutate(
+    # Diameter
+    dbh_1 = c13_1 / pi,
+    dbh_2 = c13_2 / pi,
+    
+    # Basal Area
+    ba_1  = pi * ( dbh_1 / 2 ) ^ 2,
+    ba_2  = pi * ( dbh_2 / 2 ) ^ 2
+  )
+```
+
+#### Quality controls
+```{r}
+# Remove all alive trees that have a change of -0.05/yr, because that is likely
+# and measurement error and trees should not shrink substantially.
+df_comb_qc <- 
+  df_comb_size |> 
+  mutate(c13_change = ( c13_2 - c13_1 ) / c13_1 / 5 ,
+         c13_change = round(c13_change * 100)
+         ) |>
+  filter(c13_change > -5)
+```
+
+## Define most dominant genus per department
+```{r}
+df_dominant_species <-  
+  df_comb_qc |> 
+  group_by(dep) |> 
+  nest() |> 
+  mutate(top_genus = map_chr(data,
+                                  ~pull(.,genus_lat) |> 
+                                    table() |> 
+                                    sort(decreasing = TRUE) |> 
+                                    names() |> 
+                                    head(3) |> 
+                                    paste0(collapse = ", ")
+                                    )) |> 
+  mutate(top_species = map_chr(data,
+                                  ~pull(.,species_lat) |> 
+                                    table() |> 
+                                    sort(decreasing = TRUE) |> 
+                                    names() |> 
+                                    head(5) |> 
+                                    paste0(collapse = ", ")
+                                    )) |> 
+  select(-data)
+```
+
+## Create Maps of Change
+### - Species Selection
+```{r}
+df_comb_qc$genus_lat |> table() |> sort(decreasing = T) |> head(10)
+df_comb_qc$species_lat |> table() |> sort(decreasing = T) |> head(10)
+```
+
+```{r}
+# Subset for given species
+selected_species <- "Quercus robur"
+species_classification_level <- "species_lat"
+
+# Could be made more flexible with family and other levels
+if (str_detect(species_classification_level, "species")) {
+  idx_majority <- 
+    df_dominant_species |> 
+    filter(str_detect(top_species, selected_species)) |> 
+    pull(dep)
+  
+} else if (str_detect(species_classification_level, "genus")) {
+  idx_majority <- 
+    df_dominant_species |> 
+    filter(str_detect(top_genus, selected_species)) |> 
+    pull(dep)
+}
+
+# Make subset
+df_species <- 
+  df_comb_qc |> 
+  filter(str_detect(get(species_classification_level), selected_species))
+
+# QC
+if (nrow(df_species) == 0) stop("Empty df!")
+```
+
+#### Mortality
+##### Stem-based
+```{r}
+# Filter criteria:
+# - Revisited trees that were alive at first visit and dead at second visit
+# - Recruited trees that were dead
+# - Remove trees that were cut at second visit
+df_dead <- 
+  df_species |>
+  filter(
+    (revisit_state == "revisited" & 
+       tree_state_1  == "alive" &
+       tree_state_2 != "cut") |
+    (revisit_state == "newly_sampled")
+    )
+
+# ______________________________________________________________________________
+# Aggregate data to department level
+# - N_init = All trees that were alive at first cencsus
+# - N_surv = All trees that were not dead at second census
+
+df_dep <- 
+  df_dead |> 
+  group_by(campagne_1, dep) |> 
+  nest() |> 
+  ungroup() |> 
+  mutate(n_init    = map_dbl(data, ~nrow(.)),
+         n_surv    = map_dbl(data, ~filter(., tree_state_2 == "alive") |> nrow()),
+         change = (1 - (n_surv/n_init) ^ (1/5) ) * 100
+         )
+
+df_dep_reduced <-
+  df_dep |> 
+  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+         census_interval = as.factor(census_interval)) |> 
+  select(-data, -n_init, -n_surv, -campagne_1)
+
+# ______________________________________________________________________________
+# Cleaning Steps
+# Set mortality to NA if species is not dominant in the given department
+df_filtered <- 
+  df_dep_reduced |>
+  mutate(change = ifelse(dep %in% idx_majority, change, NA))
+
+# TODO BUGFIX: One site has a 20% mortality, which messes with the color-scale.
+# I am excluding that data for now.
+df_filtered <- df_filtered |> filter(change < 10)
+
+# ______________________________________________________________________________
+# Match data to regions
+all_deps      <- df_comb_qc |> pull(dep) |> unique()
+dummy         <- c(2015:2021)
+all_intervals <- paste0(dummy - 5, "-", dummy)
+
+df_dep_grid   <-
+  expand.grid(all_deps, all_intervals) |> 
+  rename(
+  dep = Var1,
+  census_interval = Var2
+  ) |> 
+  as_tibble()
+
+df_dep_grid <- 
+  left_join(
+    df_dep_grid, 
+    df_filtered,
+    by = join_by(dep, census_interval))
+
+# Plot mortality
+# Get shapefile
+sf_france <- get_shapefile_france()
+
+# Attach data
+df_plot <- 
+  right_join(
+    sf_france |> rename(dep = CC_2), 
+    df_dep_grid,
+    by = "dep")
+
+# ______________________________________________________________________________
+# Plot it
+p <- 
+  ggplot() +
+  geom_sf(data = df_plot, 
+          aes(fill = change)) +
+  facet_wrap(~census_interval) +
+  scale_fill_viridis_c(
+    option = "A", 
+    na.value = "white",
+    name = "%-stems lost per year: \n"
+    ) +
+  labs(title = paste0("Mortality of ", selected_species),
+       subtitle = 
+         expression(
+           paste("Stem-based mortality following Esquivel-Muelbert et al. 2020: ",
+           m == (1 - ( N[t1] / N[t0] ) ^ (1/T)) %*% 100)
+           ),
+       caption = paste0(
+         "\n Subset:\n",
+         "- Trees that were alive at first visit and were dead at second visit. \n",
+         "- Trees that were cut at second visit are not included to show natural mortality."
+         ) 
+       ) +
+  theme_classic() +
+  theme(plot.caption = element_text(hjust = 0),
+        legend.position = "bottom")
+
+# Save it
+ggsave(
+  paste0(
+    "figures/", format(Sys.time(), format = "%Y-%d-%m_%H%M%S"),
+    "_plot_",
+    selected_species, "-mortality-stem_based.pdf"),
+  p,
+  height = 10,
+  width = 10
 )
 ```
+
+##### Basal area-based
+```{r}
+# Filter criteria:
+# - Revisited trees that were alive at first visit and dead at second visit
+# - Remove recruited trees, because only BA measurement at second census
+# - Remove trees that were cut at second visit
+
+df_dead <- 
+  df_species |>
+  filter(
+    revisit_state == "revisited",
+    tree_state_1  == "alive",
+    tree_state_2 != "cut"
+    )
+
+# ______________________________________________________________________________
+# Aggregate data to department level
+# - total_b_0 = Total basal area measured at first census
+# - total_b_1 = Total basal area measured at second census
+
+# Aggregate data to department level
+df_dep <- 
+  df_dead |> 
+  group_by(campagne_1, dep) |> 
+  nest() |> 
+  ungroup() |> 
+  mutate(total_ba_0 = map_dbl(data, ~pull(., ba_1) |> sum()),
+         total_ba_1 = map_dbl(data, ~filter(., tree_state_2 == "alive") |> 
+                                pull(ba_2) |> 
+                                sum()),
+         change = (total_ba_1 - total_ba_0) / total_ba_0 / 5 * 100
+         )
+
+df_dep_reduced <-
+  df_dep |> 
+  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+         census_interval = as.factor(census_interval)) |> 
+  select(dep, census_interval, change)
+
+# ______________________________________________________________________________
+# Cleaning Steps
+# Set mortality to NA if species is not dominant in the given department
+df_filtered <- 
+  df_dep_reduced |>
+  mutate(change = ifelse(dep %in% idx_majority, change, NA))
+
+# Filter out non-valid values
+# Remove negative mortality, because it is growth and makes no sense
+# df_filtered <- df_dep_reduced |> filter(change > 0)
+df_filtered <- df_filtered |> 
+  mutate(change = ifelse(change > 0, change, 0))
+
+# ______________________________________________________________________________
+# Match data to regions
+all_deps      <- df_comb_qc |> pull(dep) |> unique()
+dummy         <- c(2015:2021)
+all_intervals <- paste0(dummy - 5, "-", dummy)
+
+df_dep_grid   <-
+  expand.grid(all_deps, all_intervals) |> 
+  rename(
+  dep = Var1,
+  census_interval = Var2
+  ) |> 
+  as_tibble()
+
+df_dep_grid <- 
+  left_join(
+    df_dep_grid, 
+    df_filtered,
+    by = join_by(dep, census_interval))
+
+# Plot mortality
+# Get shapefile
+sf_france <- get_shapefile_france()
+
+# Attach data
+df_plot <- 
+  right_join(
+    sf_france |> rename(dep = CC_2), 
+    df_dep_grid,
+    by = "dep")
+
+# ______________________________________________________________________________
+# Plot it
+p <- 
+  ggplot() +
+  geom_sf(data = df_plot, aes(fill = change)) +
+  facet_wrap(~census_interval) +
+  scale_fill_viridis_c(
+    option = "A", 
+    na.value = "white",
+    name = "% of basal area lost per year: \n"
+    ) +
+  labs(title = paste0("Mortality of ", selected_species),
+       subtitle = 
+         expression(
+           paste("Mortality based on change in total basal area per department: ",
+           m == (BA[t1] - BA[t1]) / BA[t0] %/% 5 %*% 100)
+           ),
+       caption = paste0(
+         "\n Subset:\n",
+         "- Trees that were alive at first visit and were dead at second visit. \n",
+         "- Trees that were cut at second visit are not included to show natural mortality."
+         ) 
+       ) +
+  theme_classic() +
+  theme(plot.caption = element_text(hjust = 0),
+        legend.position = "bottom")
+
+# Save it
+ggsave(
+  paste0(
+    "figures/", format(Sys.time(), format = "%Y-%d-%m_%H%M%S"),
+    "_plot_",
+    selected_species, "-mortality-basal_area_based.pdf"),
+  p,
+  height = 10,
+  width = 10
+)
+```
+
+#### Growth
+```{r}
+# Filter criteria:
+# - Revisited trees that were alive at first visit and second visit
+# - New trees that were recruited and alive
+df_growth <- 
+  df_species |>
+  filter(
+    (revisit_state == "revisited" &
+       tree_state_1  == "alive" & 
+       tree_state_2  == "alive") |
+    (revisit_state == "newly_sampled" &
+     tree_state_1  == "alive")
+    )
+
+# ______________________________________________________________________________
+# Aggregate data to department level
+# - total_b_0 = Total basal area measured at first census
+# - total_b_1 = Total basal area measured at second census
+
+# Aggregate data to department level
+df_dep <- 
+  df_growth |> 
+  group_by(campagne_1, dep) |> 
+  nest() |> 
+  ungroup() |> 
+  mutate(total_ba_0 = map_dbl(data, ~pull(., ba_1) |> sum()),
+         total_ba_1 = map_dbl(data, ~pull(., ba_2) |> sum()),
+         change = (total_ba_1 - total_ba_0) / total_ba_0 / 5 * 100
+         )
+
+df_dep_reduced <-
+  df_dep |> 
+  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+         census_interval = as.factor(census_interval)) |> 
+  select(dep, census_interval, change)
+
+# ______________________________________________________________________________
+# Cleaning Steps
+# Set mortality to NA if species is not dominant in the given department
+df_filtered <- 
+  df_dep_reduced |>
+  mutate(change = ifelse(dep %in% idx_majority, change, NA))
+
+# Filter out non-valid values
+# TODO: There is one region with massive growth, which distorts the coloring
+# Removing this for now...
+df_dep_reduced |> arrange(desc(change))
+df_filtered <- df_filtered |> filter(change < 10)
+
+# ______________________________________________________________________________
+# Match data to regions
+all_deps      <- df_comb_qc |> pull(dep) |> unique()
+dummy         <- c(2015:2021)
+all_intervals <- paste0(dummy - 5, "-", dummy)
+
+df_dep_grid   <-
+  expand.grid(all_deps, all_intervals) |> 
+  rename(
+  dep = Var1,
+  census_interval = Var2
+  ) |> 
+  as_tibble()
+
+df_dep_grid <- 
+  left_join(
+    df_dep_grid, 
+    df_filtered,
+    by = join_by(dep, census_interval))
+
+# Plot change
+# Get shapefile
+sf_france <- get_shapefile_france()
+
+# Attach data
+df_plot <- 
+  right_join(
+    sf_france |> rename(dep = CC_2), 
+    df_dep_grid,
+    by = "dep")
+
+# ______________________________________________________________________________
+# Plot it
+p <- 
+  ggplot() +
+  geom_sf(data = df_plot, aes(fill = change)) +
+  facet_wrap(~census_interval) +
+  scale_fill_viridis_c(
+    option = "A", 
+    na.value = "white",
+    name = "% of basal area gained per year: \n"
+    ) +
+  labs(title = paste0("Growth of ", selected_species),
+       subtitle = 
+         expression(
+           paste("Growth based on change in total basal area per department: ",
+           g == ( BA[t1] - BA[t0]) / BA[t0] %/% 5 %*% 100)
+           ),
+       caption = paste0(
+         "\n Subset:\n",
+         "- Fagales trees that were alive at first visit and second visit. \n",
+         "- Fagales trees that were recruited at second visit \n"
+         ) 
+       ) +
+  theme_classic() +
+  theme(plot.caption = element_text(hjust = 0),
+        legend.position = "bottom")
+
+# Save it
+ggsave(
+  paste0(
+    "figures/", format(Sys.time(), format = "%Y-%d-%m_%H%M%S"),
+    "_plot_",
+    selected_species, "-growth-basal_area_based.pdf"),
+  p,
+  height = 10,
+  width = 10
+)
+```
+
+#### Removal
+##### Stem-based
+```{r}
+# Filter criteria:
+# - Revisited trees that were alive at first visit and cut at second visit
+# - Remove trees that were dead at second visit
+
+df_cut <- 
+  df_species |>
+  filter(
+    (revisit_state == "revisited" & 
+       tree_state_1  == "alive" &
+       tree_state_2  != "dead") |
+    (revisit_state == "newly_sampled")
+    )
+
+# ______________________________________________________________________________
+# Aggregate data to department level
+# - N_init = All trees that were alive at first cencsus
+# - N_surv = All trees that were not removed at second census
+
+df_dep <- 
+  df_cut |> 
+  group_by(campagne_1, dep) |> 
+  nest() |> 
+  ungroup() |> 
+  mutate(n_init    = map_dbl(data, ~nrow(.)),
+         n_surv    = map_dbl(data, ~filter(., tree_state_2 == "alive") |> nrow()),
+         # change = (1 - (n_surv/n_init) ^ (1/5) ) * 100
+         change = (1 - (n_surv/n_init) ^ (1/5) ) * 100
+         )
+
+df_dep_reduced <-
+  df_dep |> 
+  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+         census_interval = as.factor(census_interval)) |> 
+  select(-data, -n_init, -n_surv, -campagne_1)
+
+# ______________________________________________________________________________
+# Cleaning Steps
+# Set mortality to NA if species is not dominant in the given department
+df_filtered <- 
+  df_dep_reduced |>
+  mutate(change = ifelse(dep %in% idx_majority, change, NA))
+
+# TODO BUGFIX: One site has a 20% mortality, which messes with the color-scale.
+# I am excluding that data for now.
+df_dep_reduced |> arrange(desc(change))
+df_filtered <- df_filtered |> filter(change < 10)
+
+# ______________________________________________________________________________
+# Match data to regions
+all_deps      <- df_comb_qc |> pull(dep) |> unique()
+dummy         <- c(2015:2021)
+all_intervals <- paste0(dummy - 5, "-", dummy)
+
+
+df_dep_grid   <-
+  expand.grid(all_deps, all_intervals) |> 
+  rename(
+  dep = Var1,
+  census_interval = Var2
+  ) |> 
+  as_tibble()
+
+df_dep_grid <- 
+  left_join(
+    df_dep_grid, 
+    df_filtered,
+    by = join_by(dep, census_interval))
+
+# Plot mortality
+# Get shapefile
+sf_france <- get_shapefile_france()
+
+# Attach data
+df_plot <- 
+  right_join(
+    sf_france |> rename(dep = CC_2), 
+    df_dep_grid,
+    by = "dep")
+
+
+# ______________________________________________________________________________
+# Plot it
+p <- 
+  ggplot() +
+  geom_sf(data = df_plot, 
+          aes(fill = change)) +
+  facet_wrap(~census_interval) +
+  scale_fill_viridis_c(
+    option = "A", 
+    na.value = "white",
+    name = "%-stems removed per year: \n"
+    ) +
+  labs(title = paste0("Removal of ", selected_species),
+       subtitle = 
+         expression(
+           paste("Stem-based removal following Esquivel-Muelbert et al. 2020: ",
+           m == (1 - ( N[t1] / N[t0] ) ^ (1/T)) %*% 100)
+           ),
+       caption = paste0(
+         "\n Subset:\n",
+         "- Trees that were alive at first visit and were removed at second visit. \n",
+         "- Trees that were dead at second visit are not included to show only removal."
+         ) 
+       ) +
+  theme_classic() +
+  theme(plot.caption = element_text(hjust = 0),
+        legend.position = "bottom")
+
+# Save it
+ggsave(
+  paste0(
+    "figures/", format(Sys.time(), format = "%Y-%d-%m_%H%M%S"),
+    "_plot_",
+    selected_species, "-removal-stem_based.pdf"),
+  p,
+  height = 10,
+  width = 10
+)
+```
+
+##### Basal area-based
+
+TODO: THIS IS NOT WORKING YET!!!
+
+```{r eval=FALSE}
+# Filter criteria:
+# - Revisited trees that were alive at first visit and dead at second visit
+# - Remove recruited trees, because only BA measurement at second census
+# - Remove trees that were cut at second visit
+
+df_cut <- 
+  df_species |>
+  filter(
+    revisit_state == "revisited",
+    tree_state_1  == "alive",
+    tree_state_2 != "dead"
+    )
+
+# ______________________________________________________________________________
+# Aggregate data to department level
+# - total_b_0 = Total basal area measured at first census
+# - total_b_1 = Total basal area measured at second census
+
+# Aggregate data to department level
+df_dep <- 
+  df_cut |> 
+  group_by(campagne_1, dep) |> 
+  nest() |> 
+  ungroup() |> 
+  mutate(total_ba_0 = map_dbl(data, ~pull(., ba_1) |> sum()),
+         total_ba_1 = map_dbl(data, ~filter(., tree_state_2 == "alive") |> 
+                                pull(ba_2) |> 
+                                sum()),
+         change = (total_ba_1 - total_ba_0) / total_ba_0 / 5 * 100
+         )
+
+df_dep_reduced <-
+  df_dep |> 
+  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+         census_interval = as.factor(census_interval)) |> 
+  select(dep, census_interval, change)
+
+# ______________________________________________________________________________
+# Filter out non-valid values
+# Remove negative mortality, because it is growth and makes no sense
+df_dep_reduced |> arrange(change)
+df_filtered <- df_dep_reduced |> filter(change > 0)
+
+# ______________________________________________________________________________
+# Match data to regions
+all_deps      <- df_comb_qc |> pull(dep) |> unique()
+dummy         <- c(2015:2021)
+all_intervals <- paste0(dummy - 5, "-", dummy)
+
+df_dep_grid   <-
+  expand.grid(all_deps, all_intervals) |> 
+  rename(
+  dep = Var1,
+  census_interval = Var2
+  ) |> 
+  as_tibble()
+
+df_dep_grid <- 
+  left_join(
+    df_dep_grid, 
+    df_filtered,
+    by = join_by(dep, census_interval))
+
+# Plot mortality
+# Get shapefile
+sf_france <- get_shapefile_france()
+
+# Attach data
+df_plot <- 
+  right_join(
+    sf_france |> rename(dep = CC_2), 
+    df_dep_grid,
+    by = "dep")
+
+# ______________________________________________________________________________
+# Plot it
+p <- 
+  ggplot() +
+  geom_sf(data = df_plot, aes(fill = change)) +
+  facet_wrap(~census_interval) +
+  scale_fill_viridis_c(
+    option = "A", 
+    na.value = "white",
+    name = "% of basal area removed per year: \n"
+    ) +
+  labs(title = paste0("Mortality of ", selected_species),
+       subtitle = 
+         expression(
+           paste("Mortality based on change in total basal area per department: ",
+           m == (BA[t1] - BA[t1]) / BA[t0] %/% 5 %*% 100)
+           ),
+       caption = paste0(
+         "\n Subset:\n",
+         "- Trees that were alive at first visit and were dead at second visit. \n",
+         "- Trees that were cut at second visit are not included to show natural mortality."
+         ) 
+       ) +
+  theme_classic() +
+  theme(plot.caption = element_text(hjust = 0),
+        legend.position = "bottom")
+
+# Save it
+ggsave(
+  paste0(
+    "figures/", format(Sys.time(), format = "%Y-%d-%m_%H%M%S"),
+    "_plot_",
+    selected_species, "-removal-basal_area_based.pdf"),
+  p,
+  height = 10,
+  width = 10
+)
+```
+
+# --- WIP
 
 ### Attach influence information
 #### Attach nature influence
@@ -178,18 +1068,6 @@ load_or_save_latest_file("df_comb_nature", "save")
 
 ```
 
-### Calculation of biomass changes
-
-- deltas:
-  -   For dead trees
-    -   If they have a second c13 measurement, take that as negative
-    -   If they have no second c13 measurement, take first measurement as negative
-  - For cut trees
-    -   If they have no second c13 measurement, take first measurement as negative
-  - For alive trees
-    -   Take second minus first measurement
-
-# --- WIP
 
 ### Classifications of Tree Status, Class, Human / Nature Influence
 
