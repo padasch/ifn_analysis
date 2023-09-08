@@ -25,7 +25,7 @@ get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
     ) |> 
     select(lvl, label) |> 
     distinct() |> 
-    rename(name_french = label,
+    rename(species_fr = label,
            lvl_french  = lvl)
   
   # Get scientific species names and extract french names, if they were added
@@ -34,10 +34,10 @@ get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
     l_metadata$lvls |> 
     filter(variable == "CDREF13") |> 
     select(lvl, label) |> 
-    rename(name_scientific = label,
+    rename(species_lat = label,
            lvl_scientific  = lvl) |> 
-    mutate(name_french  = str_extract(name_scientific, "\\((.*?)\\)"),
-           name_french = str_replace_all(name_french, "\\(|\\)", "")
+    mutate(species_fr  = str_extract(species_lat, "\\((.*?)\\)"),
+           species_fr = str_replace_all(species_fr, "\\(|\\)", "")
     )
   
   # Join french and scientific names
@@ -45,7 +45,7 @@ get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
     left_join(
       metadata_species_french, 
       metadata_species_scientific,
-      by = join_by(name_french)
+      by = join_by(species_fr)
     )
   
   # Clean up names by hand because some french names could not be linked up
@@ -53,41 +53,41 @@ get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
   species_list <- 
     species_list |> 
     mutate(
-      name_scientific = ifelse(name_french == "Peuplier cultivé"           , "Populus", name_scientific), 
-      name_scientific = ifelse(name_french == "Érable à feuilles d'obier"  , "Acer opalus", name_scientific), 
-      name_scientific = ifelse(name_french == "Marronnier d'Inde"          , "Aesculus hippocastanum", name_scientific), 
-      name_scientific = ifelse(name_french == "Filao"                      , "Casuarina equisetifolia", name_scientific), 
-      name_scientific = ifelse(name_french == "Autre feuillu"              , "Magnoliopsida", name_scientific), 
-      name_scientific = ifelse(name_french == "Eucalyptus (genre)"         , "Eucalyptus", name_scientific), 
-      name_scientific = ifelse(name_french == "Pin noir d'Autriche"        , "Pinus nigra", name_scientific), 
-      name_scientific = ifelse(name_french == "Pin brutia (ou) eldarica"   , "Pin brutia", name_scientific), 
-      name_scientific = ifelse(name_french == "Mélèze d'Europe"            , "Larix decidua", name_scientific), 
-      name_scientific = ifelse(name_french == "Cèdre de l'Atlas"           , "Cedrus atlantica", name_scientific), 
-      name_scientific = ifelse(name_french == "Cèdre de Chypre"            , "Cedrus brevifolia", name_scientific), 
-      name_scientific = ifelse(name_french == "Épicéa omorika"             , "Picea omorika", name_scientific), 
-      name_scientific = ifelse(name_french == "Cyprès chauve"              , "Taxodium distichum", name_scientific), 
-      name_scientific = ifelse(name_french == "Tsuga heterophylla"         , "Tsuga heterophylla", name_scientific), 
-      name_scientific = ifelse(name_french == "Cryptomère du Japon"        , "Cryptomeria japonica", name_scientific), 
-      name_scientific = ifelse(name_french == "Autre conifère"             , "Conifer", name_scientific), 
-      name_scientific = ifelse(name_french == "Sapin d'Andalousie"         , "Abies pinsapo", name_scientific), 
-      name_scientific = ifelse(name_french == "Pin à l'encens et hybrides" , "Pinus taeda", name_scientific), 
-      name_scientific = ifelse(name_french == "Peuplier"                   , "Populus", name_scientific), 
-      name_scientific = ifelse(name_french == "Mûrier blanc"               , "Morus alba", name_scientific), 
-      name_scientific = ifelse(name_french == "Mûrier noir"                , "Morus nigra", name_scientific), 
-      name_scientific = ifelse(name_french == "Vernis vrai"                , "Toxicodendron vernicifluum", name_scientific), 
-      name_scientific = ifelse(name_french == "Aubépine azérolier"         , "Crataegus azarolus", name_scientific), 
-      name_scientific = ifelse(name_french == "Oranger"                    , "Citrus sinensis", name_scientific), 
-      name_scientific = ifelse(name_french == "Cerisier de Sainte Lucie"   , "Prunus mahaleb", name_scientific), 
-      name_scientific = ifelse(name_french == "Tamaris d'Afrique"          , "Tamarix africana", name_scientific), 
-      name_scientific = ifelse(name_french == "Prunelier"                  , "Prunus spinosa", name_scientific), 
-      name_scientific = ifelse(name_french == "Fusain d'Europe"            , "Euonymus europaeus", name_scientific), 
-      name_scientific = ifelse(name_french == "Sureau rouge"               , "Sambucus racemosa", name_scientific),
-      name_scientific = ifelse(name_scientific == "Salix alba (Saule blanc)", "Salicaceae", name_scientific),
-      name_scientific = ifelse(name_scientific == "Pin brutia"             , "Pinaceae", name_scientific)
+      species_lat = ifelse(species_fr == "Peuplier cultivé"           , "Populus", species_lat), 
+      species_lat = ifelse(species_fr == "Érable à feuilles d'obier"  , "Acer opalus", species_lat), 
+      species_lat = ifelse(species_fr == "Marronnier d'Inde"          , "Aesculus hippocastanum", species_lat), 
+      species_lat = ifelse(species_fr == "Filao"                      , "Casuarina equisetifolia", species_lat), 
+      species_lat = ifelse(species_fr == "Autre feuillu"              , "Magnoliopsida", species_lat), 
+      species_lat = ifelse(species_fr == "Eucalyptus (genre)"         , "Eucalyptus", species_lat), 
+      species_lat = ifelse(species_fr == "Pin noir d'Autriche"        , "Pinus nigra", species_lat), 
+      species_lat = ifelse(species_fr == "Pin brutia (ou) eldarica"   , "Pin brutia", species_lat), 
+      species_lat = ifelse(species_fr == "Mélèze d'Europe"            , "Larix decidua", species_lat), 
+      species_lat = ifelse(species_fr == "Cèdre de l'Atlas"           , "Cedrus atlantica", species_lat), 
+      species_lat = ifelse(species_fr == "Cèdre de Chypre"            , "Cedrus brevifolia", species_lat), 
+      species_lat = ifelse(species_fr == "Épicéa omorika"             , "Picea omorika", species_lat), 
+      species_lat = ifelse(species_fr == "Cyprès chauve"              , "Taxodium distichum", species_lat), 
+      species_lat = ifelse(species_fr == "Tsuga heterophylla"         , "Tsuga heterophylla", species_lat), 
+      species_lat = ifelse(species_fr == "Cryptomère du Japon"        , "Cryptomeria japonica", species_lat), 
+      species_lat = ifelse(species_fr == "Autre conifère"             , "Conifer", species_lat), 
+      species_lat = ifelse(species_fr == "Sapin d'Andalousie"         , "Abies pinsapo", species_lat), 
+      species_lat = ifelse(species_fr == "Pin à l'encens et hybrides" , "Pinus taeda", species_lat), 
+      species_lat = ifelse(species_fr == "Peuplier"                   , "Populus", species_lat), 
+      species_lat = ifelse(species_fr == "Mûrier blanc"               , "Morus alba", species_lat), 
+      species_lat = ifelse(species_fr == "Mûrier noir"                , "Morus nigra", species_lat), 
+      species_lat = ifelse(species_fr == "Vernis vrai"                , "Toxicodendron vernicifluum", species_lat), 
+      species_lat = ifelse(species_fr == "Aubépine azérolier"         , "Crataegus azarolus", species_lat), 
+      species_lat = ifelse(species_fr == "Oranger"                    , "Citrus sinensis", species_lat), 
+      species_lat = ifelse(species_fr == "Cerisier de Sainte Lucie"   , "Prunus mahaleb", species_lat), 
+      species_lat = ifelse(species_fr == "Tamaris d'Afrique"          , "Tamarix africana", species_lat), 
+      species_lat = ifelse(species_fr == "Prunelier"                  , "Prunus spinosa", species_lat), 
+      species_lat = ifelse(species_fr == "Fusain d'Europe"            , "Euonymus europaeus", species_lat), 
+      species_lat = ifelse(species_fr == "Sureau rouge"               , "Sambucus racemosa", species_lat),
+      species_lat = ifelse(species_lat == "Salix alba (Saule blanc)"  , "Salicaceae", species_lat),
+      species_lat = ifelse(species_lat == "Pin brutia"                , "Pinaceae", species_lat)
     )
   
   # Run species list against online database of species and extract keep genus info
-  species_df <- rgbif::name_backbone_checklist(species_list$name_scientific)
+  species_df <- rgbif::name_backbone_checklist(species_list$species_lat)
   
   # Attach information on tree type
   species_df <- 
@@ -95,17 +95,22 @@ get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
     mutate(
       tree_class = ifelse(class == "Pinopsida", "pinus", "broadleaf"),
     ) |> 
-    rename(name_scientific = verbatim_name)
+    rename(species_lat = verbatim_name)
   
   # Connect french_lvl with tree_class and clean up df
   out <- 
     inner_join(
       species_list, 
       species_df, 
-      by = join_by(name_scientific), 
+      by = join_by(species_lat), 
       relationship = "many-to-many"
     ) |> 
-    select(lvl_french, tree_class) |> 
+    rename(
+      genus_lat  = genus,
+      family_lat = family,
+      order_lat  = order
+    ) |> 
+    select(lvl_french, tree_class, species_lat, genus_lat, family_lat, order_lat) |> 
     distinct()
   
   return(out)
