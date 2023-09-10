@@ -1100,28 +1100,40 @@ xxx <-
 
 xxx |> 
   drop_na() |> 
+  arrange(dep, campagne_1) |> 
+  mutate(campagne_2 = campagne_1 + 5) |> 
   select(-data) |> 
   ggplot() + 
   aes(y = growth_ba_yr_ha_scaled, 
       x = death_ba_yr_ha_scaled,
       group = 1,
-      fill = as.factor(campagne_1)) +
+      fill = as.factor(campagne_2)) +
   # Add layout
   geom_abline(intercept = 0, slope = 1, linetype = "dotted") +
   facet_wrap(~dep) + 
   
   # Add arrow paths
-  geom_path(aes(alpha = campagne_1),
+  geom_path(aes(alpha = campagne_2),
             arrow = arrow(type = "closed", 
                           length = unit(0.08, "inches"))) +
   scale_alpha_continuous(range = c(0.5, 1)) +  # Adjust the range for desired transparency
   
   # Add points
-  geom_point(color = "black", shape = 21) + 
+  geom_point(color = "black", shape = 21, size = 2) + 
   scale_fill_viridis_d() +
   
   # Add theme
-  theme_linedraw()
+  labs(
+    title = paste0("Growth versus Mortality Trajectories of ", selected_species),
+    x = "Scaled Mortality Rate",
+    y = "Scaled Growth Rate",
+    fill = "Year of 2nd Census"
+  ) +
+  scale_x_continuous(breaks = c(0, 0.5, 1)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme_linedraw() +
+  theme(legend.position = "top") +
+  guides(alpha = FALSE, fill = guide_legend(nrow = 1)) 
 ```
 
 
