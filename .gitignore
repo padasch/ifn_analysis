@@ -9,3 +9,4 @@ analysis/figures/*
 analysis/render/*
 analysis/.quarto/*
 figures
+qgis-project
