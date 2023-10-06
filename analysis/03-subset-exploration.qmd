@@ -9,7 +9,7 @@ editor_options:
 source(here::here("R/_setup.R"))
 
 # Create today's figure directory
-dir_tmp <- here("figures", format(Sys.time(), format = "%Y-%d-%m"))
+dir_tmp <- here("figures", format(Sys.time(), format = "%Y-%m-%d"))
 if (!dir.exists(dir_tmp)) dir.create(dir_tmp, recursive = T, showWarnings = F)
 ```
 
@@ -406,7 +406,7 @@ df_dominant_species <-
 ```
 
 ## Create Maps of Change
-### - Species Selection
+### Species Selection
 ```{r}
 df_comb_qc$genus_lat |> table() |> sort(decreasing = T) |> head(10)
 df_comb_qc$species_lat |> table() |> sort(decreasing = T) |> head(10)
@@ -439,601 +439,178 @@ df_species <-
   df_comb_qc |> 
   filter(str_detect(get(species_classification_level), selected_species))
 
-df_species <- 
-  df_comb_qc |> 
-  filter(order_lat == "Fagales")
+# df_species <- 
+#   df_comb_qc |> 
+#   filter(order_lat == "Fagales")
 
 # QC
 if (nrow(df_species) == 0) stop("Empty df!")
 ```
 
-#### Mortality
-##### Stem-based
+### Hexmaps
+#### Using QGIS Hexmap
 ```{r}
-# Filter criteria:
-# - Revisited trees that were alive at first visit and dead at second visit
-# - Recruited trees that were dead
-# - Remove trees that were cut at second visit
-df_dead <- 
-  df_species |>
-  filter(
-    (revisit_state == "revisited" & 
-       tree_state_1  == "alive" &
-       tree_state_2 != "cut") |
-    (revisit_state == "newly_sampled")
-    )
+# Load the shapefile
+hexmap <-
+  st_read(here("data/raw/maps/hexmaps/qgis-hexmap-y_axis-75km.shp")) |>
+  mutate(polyg_id = row_number()) |>
+  select(geometry, polyg_id)
 
-# ______________________________________________________________________________
-# Aggregate data to department level
-# - N_init = All trees that were alive at first cencsus
-# - N_surv = All trees that were not dead at second census
+df_joint_sf <-
+  st_as_sf(df_species,
+           coords = c("lon", "lat"),
+           crs = st_crs(hexmap)) |>
+  st_join(hexmap)
 
-df_dep <- 
-  df_dead |> 
-  group_by(campagne_1, dep) |> 
-  nest() |> 
-  ungroup() |> 
-  mutate(n_init    = map_dbl(data, ~nrow(.)),
-         n_surv    = map_dbl(data, ~filter(., tree_state_2 == "alive") |> nrow()),
-         change = (1 - (n_surv/n_init) ^ (1/5) ) * 100
-         )
+# Filter:
+# - Keep only trees that were alive at 1st census and not cut at 2nd census
+# - Filter for sites that have at least five trees of the species
+min_ntrees_per_polygon <- 5
 
-df_dep_reduced <-
-  df_dep |> 
-  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
-         census_interval = as.factor(census_interval)) |> 
-  select(-data, -n_init, -n_surv, -campagne_1)
-
-# ______________________________________________________________________________
-# Cleaning Steps
-# Set mortality to NA if species is not dominant in the given department
-df_filtered <- 
-  df_dep_reduced |>
-  mutate(change = ifelse(dep %in% idx_majority, change, NA))
-
-# TODO BUGFIX: One site has a 20% mortality, which messes with the color-scale.
-# I am excluding that data for now.
-df_filtered <- df_filtered |> filter(change < 10)
-
-# ______________________________________________________________________________
-# Match data to regions
-all_deps      <- df_comb_qc |> pull(dep) |> unique()
-dummy         <- c(2015:2021)
-all_intervals <- paste0(dummy - 5, "-", dummy)
-
-df_dep_grid   <-
-  expand.grid(all_deps, all_intervals) |> 
-  rename(
-  dep = Var1,
-  census_interval = Var2
-  ) |> 
-  as_tibble()
-
-df_dep_grid <- 
-  left_join(
-    df_dep_grid, 
-    df_filtered,
-    by = join_by(dep, census_interval))
-
-# Plot mortality
-# Get shapefile
-sf_france <- get_shapefile_france()
-
-# Attach data
-df_plot <- 
-  right_join(
-    sf_france |> rename(dep = CC_2), 
-    df_dep_grid,
-    by = "dep")
-
-# ______________________________________________________________________________
-# Plot it
-p <- 
-  ggplot() +
-  geom_sf(data = df_plot, 
-          aes(fill = change)) +
-  facet_wrap(~census_interval) +
-  scale_fill_viridis_c(
-    option = "A", 
-    na.value = "white",
-    name = "%-stems lost per year: \n"
-    ) +
-  labs(title = paste0("Mortality of ", selected_species),
-       subtitle = 
-         expression(
-           paste("Stem-based mortality following Esquivel-Muelbert et al. 2020: ",
-           m == (1 - ( N[t1] / N[t0] ) ^ (1/T)) %*% 100)
-           ),
-       caption = paste0(
-         "\n Subset:\n",
-         "- Trees that were alive at first visit and were dead at second visit. \n",
-         "- Trees that were cut at second visit are not included to show natural mortality."
-         ) 
-       ) +
-  theme_classic() +
-  theme(plot.caption = element_text(hjust = 0),
-        legend.position = "bottom")
-
-# Save it
-ggsave(
-  paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
-    format(Sys.time(), format = "%H%M%S"), "_plot_",
-    selected_species, "-mortality-stem_based.pdf"),
-  p,
-  height = 10,
-  width = 10
-)
-```
-
-##### Basal area-based
-```{r}
-# Filter criteria:
-# - Revisited trees that were alive at first visit and dead at second visit
-# - Remove recruited trees, because only BA measurement at second census
-# - Remove trees that were cut at second visit
-
-df_dead <- 
-  df_species |>
-  filter(
-    revisit_state == "revisited",
-    tree_state_1  == "alive",
-    tree_state_2 != "cut"
-    )
-
-# ______________________________________________________________________________
-# Aggregate data to department level
-# - total_b_0 = Total basal area measured at first census
-# - total_b_1 = Total basal area measured at second census
-
-# Aggregate data to department level
-df_dep <- 
-  df_dead |> 
-  group_by(campagne_1, dep) |> 
-  nest() |> 
-  ungroup() |> 
+df_nested_by_polygon <-
+  df_joint_sf |>
   mutate(
-    sample_area_hacres = map_dbl(data,
-                                 ~pull(., idp) |> 
-                                   unique() |> 
-                                   length() * 
-                                   25^2*pi/10^5), 
-    total_ba_0 = map_dbl(data, 
-                         ~pull(., ba_1) |> 
-                           sum()),
-    total_ba_1 = map_dbl(data, 
-                         ~filter(., tree_state_2 != "dead") |> 
-                           pull(ba_1) |> 
-                           sum()),
-    change = log(total_ba_0) - log(total_ba_1) / 5,
-    # change = (total_ba_1 - total_ba_0) / total_ba_0 / 5 * 100,
-    # change_ha_yr = (total_ba_1 - total_ba_0) / 5 / sample_area_hacres
-    )
-
-df_dep_reduced <-
-  df_dep |> 
-  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
-         census_interval = as.factor(census_interval)) |> 
-  select(dep, census_interval, change)
-
-# ______________________________________________________________________________
-# Cleaning Steps
-# Set mortality to NA if species is not dominant in the given department
-df_filtered <- 
-  df_dep_reduced |>
-  mutate(change = ifelse(dep %in% idx_majority, change, NA))
-
-# Filter out non-valid values
-# Remove negative mortality, because it is growth and makes no sense
-# df_filtered <- df_dep_reduced |> filter(change > 0)
-df_filtered <-
-  df_filtered |> 
-  mutate(change = ifelse(change > 0, change, NA))
-
-# ______________________________________________________________________________
-# Match data to regions
-all_deps      <- df_comb_qc |> pull(dep) |> unique()
-dummy         <- c(2015:2021)
-all_intervals <- paste0(dummy - 5, "-", dummy)
-
-df_dep_grid   <-
-  expand.grid(all_deps, all_intervals) |> 
-  rename(
-  dep = Var1,
-  census_interval = Var2
-  ) |> 
-  as_tibble()
-
-df_dep_grid <- 
-  left_join(
-    df_dep_grid, 
-    df_filtered,
-    by = join_by(dep, census_interval))
-
-# Plot mortality
-# Get shapefile
-sf_france <- get_shapefile_france()
-
-# Attach data
-df_plot <- 
-  right_join(
-    sf_france |> rename(dep = CC_2), 
-    df_dep_grid,
-    by = "dep")
-
-# ______________________________________________________________________________
-# Plot it
-p <- 
-  ggplot() +
-  geom_sf(data = df_plot, aes(fill = change)) +
-  facet_wrap(~census_interval) +
-  scale_fill_viridis_c(
-    direction = -1,
-    option = "A", 
-    na.value = "white",
-    name = "% of basal area lost per year: \n"
-    ) +
-  labs(title = paste0("Mortality of ", selected_species)
-       # ,subtitle = 
-       #   expression(
-       #     paste("Mortality based on change in total basal area per department: ",
-       #     m == (BA[t1] - BA[t1]) / BA[t0] %/% 5 %*% 100)
-       #     )
-       # ,caption = paste0(
-       #   "\n Subset:\n",
-       #   "- Trees that were alive at first visit and were dead at second visit. \n",
-       #   "- Trees that were cut at second visit are not included to show natural mortality."
-       #   ) 
-       ) +
-  theme_classic() +
-  theme(plot.caption = element_text(hjust = 0),
-        legend.position = "bottom")
-
-# Save it
-ggsave(
-  paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
-    format(Sys.time(), format = "%H%M%S"), "_plot_",
-    selected_species, "-mortality-basal_area_based.pdf"),
-  p,
-  height = 10,
-  width = 10
-)
+    census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+    census_interval = as.factor(census_interval)
+  ) |>
+  filter(
+    tree_state_1 == "alive", 
+    tree_state_2 != "cut"
+    ) |>
+  group_by(polyg_id, census_interval) |>
+  filter(n() >= min_ntrees_per_polygon) |>
+  nest()
 ```
 
-#### Growth
 ```{r}
-# Filter criteria:
-# - Revisited trees that were alive at first visit and second visit
-# - New trees that were recruited and alive
-df_growth <- 
-  df_species |>
+# Calculate growth and mortality per polygon
+tic()
+
+df_change_per_polygon <-
+  df_nested_by_polygon |>
+  mutate(
+    n_ini = map_dbl(data,
+                    ~ filter(., revisit_state == "revisited") |>
+                      nrow()),
+    
+    n_fin = map_dbl(data, ~ filter(., tree_state_2 == "alive") |>
+                      nrow()),
+    
+    n_sur = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
+        nrow()
+    ),
+    
+    ba_at_v1_of_alive_trees = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited") |>
+        pull(ba_1) |> sum()
+    ),
+    
+    ba_at_v2_of_alive_trees = map_dbl(data,
+                     ~ filter(., tree_state_2 == "alive") |>
+                       pull(ba_2) |> sum()),
+    
+    ba_at_v1_of_surivors = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
+        pull(ba_1) |> sum()
+    ),
+    
+    ba_at_v2_of_survivors = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
+        pull(ba_2) |> sum()
+    ),
+    
+    ba_at_v2_of_dead = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "dead") |>
+        pull(ba_2) |> sum()
+    ),
+    
+    n_mor_yr      = log(n_ini / n_sur) / 5 * 100,
+    n_mor_yr_esq  = (1 - (n_sur / n_ini) ^ (1 / 5)) * 100,
+    n_rec_yr      = log(n_fin / n_sur) / 5 * 100,
+    
+    ba_loss_yr    = log(ba_at_v1_of_alive_trees / ba_at_v1_of_surivors) / 5 * 100,
+    ba_gain_yr    = log(ba_at_v2_of_alive_trees / ba_at_v1_of_surivors) / 5 * 100,
+    ba_ingr_yr    = log(ba_at_v2_of_survivors / ba_at_v1_of_surivors) / 5 * 100,
+    
+    ba_growth_abs = (ba_at_v2_of_survivors - ba_at_v1_of_surivors) / 5, # m2 tree / hectare / yr
+    ba_loss_abs   = ba_at_v2_of_dead / 5, # m2 tree / hectare / yr
+    
+    ba_growth_rate = ba_growth_abs / ba_at_v1_of_alive_trees * 100, # % rate
+    ba_loss_rate   = ba_loss_abs   / ba_at_v1_of_alive_trees * 100 # % rate
+  ) |>
+  ungroup()
+
+toc()
+
+# ______________________________________________________________________________
+# Quality Control
+# - Remove negative values for growth and loss, because non-sensical
+df_change_per_polygon <- 
+  df_change_per_polygon |> 
   filter(
-    (revisit_state == "revisited" &
-       tree_state_1  == "alive" & 
-       tree_state_2  == "alive") |
-    (revisit_state == "newly_sampled" &
-     tree_state_1  == "alive")
+    ba_growth_abs > 0,
+    ba_loss_abs   > 0,
     )
-
-# ______________________________________________________________________________
-# Aggregate data to department level
-# - total_b_0 = Total basal area measured at first census
-# - total_b_1 = Total basal area measured at second census
-
-# Aggregate data to department level
-df_dep <- 
-  df_growth |> 
-  group_by(campagne_1, dep) |> 
-  nest() |> 
-  ungroup() |> 
-  mutate(total_ba_0 = map_dbl(data, ~pull(., ba_1) |> sum()),
-         total_ba_1 = map_dbl(data, ~pull(., ba_2) |> sum()),
-         change = (total_ba_1 - total_ba_0) / total_ba_0 / 5 * 100
-         )
-
-df_dep_reduced <-
-  df_dep |> 
-  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
-         census_interval = as.factor(census_interval)) |> 
-  select(dep, census_interval, change)
-
-# ______________________________________________________________________________
-# Cleaning Steps
-# Set mortality to NA if species is not dominant in the given department
-df_filtered <- 
-  df_dep_reduced |>
-  mutate(change = ifelse(dep %in% idx_majority, change, NA))
-
-# Filter out non-valid values
-# TODO: There is one region with massive growth, which distorts the coloring
-# Removing this for now...
-df_dep_reduced |> arrange(desc(change))
-df_filtered <- df_filtered |> filter(change < 10)
-
-# ______________________________________________________________________________
-# Match data to regions
-all_deps      <- df_comb_qc |> pull(dep) |> unique()
-dummy         <- c(2015:2021)
-all_intervals <- paste0(dummy - 5, "-", dummy)
-
-df_dep_grid   <-
-  expand.grid(all_deps, all_intervals) |> 
-  rename(
-  dep = Var1,
-  census_interval = Var2
-  ) |> 
-  as_tibble()
-
-df_dep_grid <- 
-  left_join(
-    df_dep_grid, 
-    df_filtered,
-    by = join_by(dep, census_interval))
-
-# Plot change
-# Get shapefile
-sf_france <- get_shapefile_france()
-
-# Attach data
-df_plot <- 
-  right_join(
-    sf_france |> rename(dep = CC_2), 
-    df_dep_grid,
-    by = "dep")
-
-# ______________________________________________________________________________
-# Plot it
-p <- 
-  ggplot() +
-  geom_sf(data = df_plot, aes(fill = change)) +
-  facet_wrap(~census_interval) +
-  scale_fill_viridis_c(
-    option = "A", 
-    na.value = "white",
-    name = "% of basal area gained per year: \n"
-    ) +
-  labs(title = paste0("Growth of ", selected_species),
-       subtitle = 
-         expression(
-           paste("Growth based on change in total basal area per department: ",
-           g == ( BA[t1] - BA[t0]) / BA[t0] %/% 5 %*% 100)
-           ),
-       caption = paste0(
-         "\n Subset:\n",
-         "- Fagales trees that were alive at first visit and second visit. \n",
-         "- Fagales trees that were recruited at second visit \n"
-         ) 
-       ) +
-  theme_classic() +
-  theme(plot.caption = element_text(hjust = 0),
-        legend.position = "bottom")
-
-# Save it
-ggsave(
-  paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
-    format(Sys.time(), format = "%H%M%S"), "_plot_",
-    selected_species, "-growth-basal_area_based.pdf"),
-  p,
-  height = 10,
-  width = 10
-)
 ```
 
-#### Removal
-##### Stem-based
 ```{r}
-# Filter criteria:
-# - Revisited trees that were alive at first visit and cut at second visit
-# - Remove trees that were dead at second visit
-
-df_cut <- 
-  df_species |>
-  filter(
-    (revisit_state == "revisited" & 
-       tree_state_1  == "alive" &
-       tree_state_2  != "dead") |
-    (revisit_state == "newly_sampled")
-    )
-
-# ______________________________________________________________________________
-# Aggregate data to department level
-# - N_init = All trees that were alive at first cencsus
-# - N_surv = All trees that were not removed at second census
-
-df_dep <- 
-  df_cut |> 
-  group_by(campagne_1, dep) |> 
-  nest() |> 
-  ungroup() |> 
-  mutate(n_init    = map_dbl(data, ~nrow(.)),
-         n_surv    = map_dbl(data, ~filter(., tree_state_2 == "alive") |> nrow()),
-         # change = (1 - (n_surv/n_init) ^ (1/5) ) * 100
-         change = (1 - (n_surv/n_init) ^ (1/5) ) * 100
-         )
-
-df_dep_reduced <-
-  df_dep |> 
-  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
-         census_interval = as.factor(census_interval)) |> 
-  select(-data, -n_init, -n_surv, -campagne_1)
-
-# ______________________________________________________________________________
-# Cleaning Steps
-# Set mortality to NA if species is not dominant in the given department
-df_filtered <- 
-  df_dep_reduced |>
-  mutate(change = ifelse(dep %in% idx_majority, change, NA))
-
-# TODO BUGFIX: One site has a 20% mortality, which messes with the color-scale.
-# I am excluding that data for now.
-df_dep_reduced |> arrange(desc(change))
-df_filtered <- df_filtered |> filter(change < 10)
+df_hexmap <-
+  left_join(df_change_per_polygon |> select(-data),
+            hexmap,
+            by = join_by(polyg_id))
 
 # ______________________________________________________________________________
 # Match data to regions
-all_deps      <- df_comb_qc |> pull(dep) |> unique()
+all_deps      <- hexmap |> pull(polyg_id) |> unique()
 dummy         <- c(2015:2021)
 all_intervals <- paste0(dummy - 5, "-", dummy)
 
-
-df_dep_grid   <-
+df_grid   <-
   expand.grid(all_deps, all_intervals) |> 
-  rename(
-  dep = Var1,
-  census_interval = Var2
-  ) |> 
+  rename(polyg_id = Var1, census_interval = Var2) |> 
   as_tibble()
 
-df_dep_grid <- 
+df_grid <- 
   left_join(
-    df_dep_grid, 
-    df_filtered,
-    by = join_by(dep, census_interval))
-
-# Plot mortality
-# Get shapefile
-sf_france <- get_shapefile_france()
+    df_grid, 
+    df_change_per_polygon |> select(-data),
+    by = join_by(polyg_id, census_interval))
 
 # Attach data
 df_plot <- 
   right_join(
-    sf_france |> rename(dep = CC_2), 
-    df_dep_grid,
-    by = "dep")
-
-
-# ______________________________________________________________________________
-# Plot it
-p <- 
-  ggplot() +
-  geom_sf(data = df_plot, 
-          aes(fill = change)) +
-  facet_wrap(~census_interval) +
-  scale_fill_viridis_c(
-    option = "A", 
-    na.value = "white",
-    name = "%-stems removed per year: \n"
-    ) +
-  labs(title = paste0("Removal of ", selected_species),
-       subtitle = 
-         expression(
-           paste("Stem-based removal following Esquivel-Muelbert et al. 2020: ",
-           m == (1 - ( N[t1] / N[t0] ) ^ (1/T)) %*% 100)
-           ),
-       caption = paste0(
-         "\n Subset:\n",
-         "- Trees that were alive at first visit and were removed at second visit. \n",
-         "- Trees that were dead at second visit are not included to show only removal."
-         ) 
-       ) +
-  theme_classic() +
-  theme(plot.caption = element_text(hjust = 0),
-        legend.position = "bottom")
-
-# Save it
-ggsave(
-  paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
-    format(Sys.time(), format = "%H%M%S"), "_plot_",
-    selected_species, "-removal-stem_based.pdf"),
-  p,
-  height = 10,
-  width = 10
-)
-```
-
-##### Basal area-based
-
-TODO: THIS IS NOT WORKING YET!!!
-
-```{r eval=FALSE}
-# Filter criteria:
-# - Revisited trees that were alive at first visit and dead at second visit
-# - Remove recruited trees, because only BA measurement at second census
-# - Remove trees that were cut at second visit
-
-df_cut <- 
-  df_species |>
-  filter(
-    revisit_state == "revisited",
-    tree_state_1  == "alive",
-    tree_state_2 != "dead"
-    )
-
-# ______________________________________________________________________________
-# Aggregate data to department level
-# - total_b_0 = Total basal area measured at first census
-# - total_b_1 = Total basal area measured at second census
-
-# Aggregate data to department level
-df_dep <- 
-  df_cut |> 
-  group_by(campagne_1, dep) |> 
-  nest() |> 
-  ungroup() |> 
-  mutate(total_ba_0 = map_dbl(data, ~pull(., ba_1) |> sum()),
-         total_ba_1 = map_dbl(data, ~filter(., tree_state_2 == "alive") |> 
-                                pull(ba_2) |> 
-                                sum()),
-         change = (total_ba_1 - total_ba_0) / total_ba_0 / 5 * 100
-         )
-
-df_dep_reduced <-
-  df_dep |> 
-  mutate(census_interval = paste0(campagne_1, "-", campagne_1 + 5),
-         census_interval = as.factor(census_interval)) |> 
-  select(dep, census_interval, change)
-
-# ______________________________________________________________________________
-# Filter out non-valid values
-# Remove negative mortality, because it is growth and makes no sense
-df_dep_reduced |> arrange(change)
-df_filtered <- df_dep_reduced |> filter(change > 0)
-
-# ______________________________________________________________________________
-# Match data to regions
-all_deps      <- df_comb_qc |> pull(dep) |> unique()
-dummy         <- c(2015:2021)
-all_intervals <- paste0(dummy - 5, "-", dummy)
-
-df_dep_grid   <-
-  expand.grid(all_deps, all_intervals) |> 
-  rename(
-  dep = Var1,
-  census_interval = Var2
-  ) |> 
-  as_tibble()
-
-df_dep_grid <- 
-  left_join(
-    df_dep_grid, 
-    df_filtered,
-    by = join_by(dep, census_interval))
-
-# Plot mortality
-# Get shapefile
-sf_france <- get_shapefile_france()
-
-# Attach data
-df_plot <- 
-  right_join(
-    sf_france |> rename(dep = CC_2), 
-    df_dep_grid,
-    by = "dep")
+    hexmap, 
+    df_grid,
+    by = "polyg_id")
 
 # ______________________________________________________________________________
 # Plot it
+
 p <- 
-  ggplot() +
-  geom_sf(data = df_plot, aes(fill = change)) +
+  df_plot %>%
+  # filter(str_detect(census_interval, "2016")) |>  # DEBUG------------------
+  ggplot(aes(fill = ba_growth_rate)) +
+  geom_sf(color = "black") +
   facet_wrap(~census_interval) +
+  theme_void() +
   scale_fill_viridis_c(
-    option = "A", 
-    na.value = "white",
-    name = "% of basal area removed per year: \n"
+    option   = "A",
+    # trans    = "log",
+    na.value = "grey90",
+    name     = "basal area loss [m2 trees / hectare land / yr]: \n"
     ) +
+  # scale_fill_viridis(
+  #   option = "B",
+  #   trans = "log",
+  #   # breaks = c(1,7,54,403,3000),
+  #   name = "Tweet # recorded in 8 months"
+  # ) +
   labs(title = paste0("Mortality of ", selected_species),
        subtitle = 
          expression(
@@ -1046,14 +623,16 @@ p <-
          "- Trees that were cut at second visit are not included to show natural mortality."
          ) 
        ) +
-  theme_classic() +
+  theme_void() +
   theme(plot.caption = element_text(hjust = 0),
         legend.position = "bottom")
+```
 
+```{r}
 # Save it
 ggsave(
   paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
+    "figures/", format(Sys.time(), format = "%Y-%m-%d"), "/",
     format(Sys.time(), format = "%H%M%S"), "_plot_",
     selected_species, "-removal-basal_area_based.pdf"),
   p,
@@ -1062,165 +641,375 @@ ggsave(
 )
 ```
 
-# --- WIP
-
-## New approach to calcualte growth and mortality
+#### Using R hexmap
 
 ```{r}
-hexmap <- 
+# Get shapefile of france
+sf_france <- get_shapefile_france() |> st_transform(crs = 2192)
 
-df_tmp <- df_species
-
-# Filter:
-# - Keep only trees that were alive at 1st census and not cut at 2nd census
-# - Filter for sites that have at least five trees of the species
-df_tmp <- 
-  df_tmp |> 
-  filter(tree_state_1 == "alive", tree_state_2 != "cut") |> 
-  group_by(idp, campagne_1) |> 
-  filter(n() > 4) |> 
-  nest()
+# Plot it
+ggplot(sf_france, aes(fill=NAME_1))+
+  geom_sf()
 ```
 
 
 ```{r}
-df_tmp <- df_species
+# Set grid size (number of cells per longitude/latitude)
+grid_size <- 20
+
+# Make hex-grid
+grd <- st_make_grid(
+  sf_france,
+  n = c(grid_size, grid_size),
+  what = "polygons",
+  square = FALSE
+  ) %>%
+  st_sf() %>% # convert back to sf object
+  mutate(polyg_id = row_number()) # add a unique id to each cell
+
+# Extract centroids
+cent<-grd%>%
+  st_centroid()
+
+# Take a look at the results
+ggplot() +
+  geom_sf(grd, mapping = aes(geometry = geometry)) +
+  geom_sf(cent,mapping=aes(geometry=geometry),pch=21,size=0.5)
+```
+
+```{r}
+# Intersect centroids with basemap
+cent_clean<-cent%>%
+  st_intersection(sf_france)
+
+# Make a centroid without geom
+# (convert from sf object to tibble)
+cent_no_geom <- cent_clean%>%
+  st_drop_geometry()
+
+# Join with grid thanks to id column
+grd_clean<-grd%>%
+  #filter(id%in%sel)%>%
+  left_join(cent_no_geom)
+
+# Check result
+# drop_na() is one way to suppress the cells outside the country
+ggplot()+
+  geom_sf(
+    grd_clean |> 
+      drop_na(NAME_1) |> 
+      mutate(NAME_1 = ifelse(NAME_1 == "Normandie", NA, NAME_1)),
+    mapping=aes(geometry=geometry,fill=NAME_1)
+  )+
+  # geom_sf(cent_clean,mapping=aes(geometry=geometry),fill=NA,pch=21,size=0.5)+
+  labs(fill="Departement") +
+  theme_void()
+```
+
+```{r}
+# Joining forest data with hexmap data to match geometry id
+df_joint_sf <- 
+  st_as_sf(df_species,
+           coords = c("lon_fr", "lat_fr"),
+           crs = st_crs(grd_clean)) |>
+  st_join(grd_clean)
 
 # Filter:
 # - Keep only trees that were alive at 1st census and not cut at 2nd census
 # - Filter for sites that have at least five trees of the species
-df_tmp <- 
-  df_tmp |> 
-  filter(tree_state_1 == "alive", tree_state_2 != "cut") |> 
-  group_by(idp, campagne_1) |> 
-  filter(n() > 4) |> 
-  nest()
+min_ntrees_per_polygon <- 5
 
-# Calculate site-level changes
-tic()
-df_tmp <- 
-  df_tmp |> 
+df_nested_by_polygon <-
+  df_joint_sf |>
   mutate(
+    census_interval = paste0(campagne_1, "-", campagne_1 + 5),
+    census_interval = as.factor(census_interval)
+  ) |>
+  filter(
+    tree_state_1 == "alive", 
+    tree_state_2 != "cut"
+    ) |>
+  group_by(polyg_id, census_interval) |>
+  filter(n() >= min_ntrees_per_polygon) |>
+  nest()
+```
+
+```{r}
+# Calculate growth and mortality per polygon
+tic()
+
+df_change_per_polygon <-
+  df_nested_by_polygon |>
+  mutate(
+    n_ini = map_dbl(data,
+                    ~ filter(., revisit_state == "revisited") |>
+                      nrow()),
     
-    n_ini = map_dbl(
-      data, ~filter(., revisit_state == "revisited") |>
-        nrow(),
-      .progress = T
-      ),
-    
-    n_fin = map_dbl(
-      data, ~filter(., tree_state_2 == "alive") |>
-        nrow(),
-      .progress = T
-      ),
+    n_fin = map_dbl(data, ~ filter(., tree_state_2 == "alive") |>
+                      nrow()),
     
     n_sur = map_dbl(
-      data, ~filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
-        nrow(),
-      .progress = T
-      ),
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
+        nrow()
+    ),
     
-    ba_ini = map_dbl(
-      data, ~filter(., revisit_state == "revisited") |>
-        pull(ba_1) |> sum(),
-      .progress = T
-      ),
+    ba_at_v1_of_alive_trees = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited") |>
+        pull(ba_1) |> sum()
+    ),
     
-    ba_fin = map_dbl(
-      data, ~filter(., tree_state_2 == "alive") |>
-        pull(ba_2) |> sum(),
-      .progress = T
-      ),
+    ba_at_v2_of_alive_trees = map_dbl(data,
+                     ~ filter(., tree_state_2 == "alive") |>
+                       pull(ba_2) |> sum()),
     
-    ba_sur_0 = map_dbl(
-      data, ~filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
-        pull(ba_1) |> sum(),
-      .progress = T
-      ),
+    ba_at_v1_of_surivors = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
+        pull(ba_1) |> sum()
+    ),
     
-    ba_sur_1 = map_dbl(
-      data, ~filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
-        pull(ba_2) |> sum(),
-      .progress = T
-      ),
+    ba_at_v2_of_survivors = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "alive") |>
+        pull(ba_2) |> sum()
+    ),
     
-    # n_mor_yr    = log(n_ini / n_sur) / 5,
-    # n_rec_yr    = log(n_fin / n_sur) / 5,
-    # 
-    # ba_loss_yr    = log(ba_ini / ba_sur_0) / 5,
-    # ba_gain_yr    = log(ba_fin / ba_sur_0) / 5,
-    # ba_ingr_yr    = log(ba_sur_1 / ba_sur_0) / 5,
-    # 
-    # ba_loss_yr    = (ba_ini - ba_sur_0) / 5, 
-    # ba_gain_yr    = (ba_fin - ba_sur_0) / 5
-    )
+    ba_at_v2_of_dead = map_dbl(
+      data,
+      ~ filter(., revisit_state == "revisited", tree_state_2  == "dead") |>
+        pull(ba_2) |> sum()
+    ),
+    
+    n_mor_yr      = log(n_ini / n_sur) / 5 * 100,
+    n_mor_yr_esq  = (1 - (n_sur / n_ini) ^ (1 / 5)) * 100,
+    n_rec_yr      = log(n_fin / n_sur) / 5 * 100,
+    
+    ba_loss_yr    = log(ba_at_v1_of_alive_trees / ba_at_v1_of_surivors) / 5 * 100,
+    ba_gain_yr    = log(ba_at_v2_of_alive_trees / ba_at_v1_of_surivors) / 5 * 100,
+    ba_ingr_yr    = log(ba_at_v2_of_survivors / ba_at_v1_of_surivors) / 5 * 100,
+    
+    ba_growth_abs = (ba_at_v2_of_survivors - ba_at_v1_of_surivors) / 5, # m2 tree / hectare / yr
+    ba_loss_abs   = ba_at_v2_of_dead / 5, # m2 tree / hectare / yr
+    
+    ba_growth_rate = ba_growth_abs / ba_at_v1_of_alive_trees * 100, # % rate
+    ba_loss_rate   = ba_loss_abs   / ba_at_v1_of_alive_trees * 100 # % rate
+  ) |>
+  ungroup()
+
 toc()
-```
 
-# Hexagonal Maps
-### Online Tutorials
-
-Link: https://r-graph-gallery.com/329-hexbin-map-for-distribution.html
-
-```{r}
-# Libraries
-library(tidyverse)
-library(viridis)
-library(hrbrthemes)
-library(mapdata)
-
-## Original Example ------------------------------------------------------------
-# Load dataset from github
-data <- read.table("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/17_ListGPSCoordinates.csv", sep=",", header=T)
-
-# plot
-data %>%
-  filter(homecontinent=='Europe') %>%
-  ggplot( aes(x=homelon, y=homelat)) + 
-    geom_hex(bins=59) +
-    ggplot2::annotate("text", x = -27, y = 72, label="Where people tweet about #Surf", colour = "black", size=5, alpha=1, hjust=0) +
-    ggplot2::annotate("segment", x = -27, xend = 10, y = 70, yend = 70, colour = "black", size=0.2, alpha=1) +
-    theme_void() +
-    xlim(-30, 70) +
-    ylim(24, 72) +
-    scale_fill_viridis(
-      option="B",
-      trans = "log", 
-      breaks = c(1,7,54,403,3000),
-      name="Tweet # recorded in 8 months", 
-      guide = guide_legend( keyheight = unit(2.5, units = "mm"), keywidth=unit(10, units = "mm"), label.position = "bottom", title.position = 'top', nrow=1) 
-    )  +
-    ggtitle( "" ) +
-    theme(
-      legend.position = c(0.8, 0.09),
-      legend.title=element_text(color="black", size=8),
-      text = element_text(color = "#22211d"),
-      plot.background = element_rect(fill = "#f5f5f2", color = NA), 
-      panel.background = element_rect(fill = "#f5f5f2", color = NA), 
-      legend.background = element_rect(fill = "#f5f5f2", color = NA),
-      plot.title = element_text(size= 13, hjust=0.1, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+# ______________________________________________________________________________
+# Quality Control
+# - Remove negative values for growth and loss, because non-sensical
+df_change_per_polygon <- 
+  df_change_per_polygon |> 
+  filter(
+    ba_growth_abs > 0,
+    ba_loss_abs   > 0,
     )
-## -----------------------------------------------------------------------------
 ```
 
 ```{r}
-tmp_perc <- function(v1, v2){
-  (v2-v1)/v1
+df_hexmap <-
+  left_join(df_change_per_polygon |> select(-data),
+            grd_clean,
+            by = join_by(polyg_id))
+
+# ______________________________________________________________________________
+# Match data to regions
+all_deps      <- grd_clean |> pull(polyg_id) |> unique()
+dummy         <- c(2015:2021)
+all_intervals <- paste0(dummy - 5, "-", dummy)
+
+df_grid   <-
+  expand.grid(all_deps, all_intervals) |> 
+  rename(polyg_id = Var1, census_interval = Var2) |> 
+  as_tibble()
+
+df_grid <- 
+  left_join(
+    df_grid, 
+    df_change_per_polygon |> select(-data),
+    by = join_by(polyg_id, census_interval))
+
+# Attach data
+df_plot <- 
+  right_join(
+    grd_clean, 
+    df_grid,
+    by = "polyg_id")
+
+# ______________________________________________________________________________
+# Plot it
+selected_var <- "n_mor_yr"
+selected_var <- "n_mor_yr_esq"
+selected_var <- "ba_growth_abs"
+selected_var <- "ba_growth_rate"
+selected_var <- "ba_loss_abs"
+selected_var <- "ba_loss_rate"
+
+# Rough plot for testing scales
+# df_plot |> drop_na(NAME_1) |> 
+#   ggplot(aes(fill = get(selected_var), color = get(selected_var))) +
+#   geom_sf(lwd = 0.1) +
+#   facet_wrap(~census_interval)
+
+# Get plot layout options based on selected variable
+# - Make a boxplot of the variable to get a feeling for useful breaks!
+
+if (selected_var == "n_mor_yr_esq" | selected_var == "n_mor_yr") {
+  legend_txt <- expression(paste("\nTree Mortality [%-stems ",yr ^ -1, "]"))
+  breaks     <- c(-Inf, 0.5, 1, 1.5, 2, 2.5, 3, Inf)
+  breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+                  paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  palette_txt <- "Reds"
+  caption_txt <- ifelse(
+    selected_var == "n_mor_yr_esq",
+    "\nMortality based on Esquivel et al. 2020:  m = (1 − (n_sur / n_ini)^(1/T)) × 100",
+    "\nMortality based on Hoshino et al. 2002:  m = log(n_ini / n_sur) / 5 * 100"
+  )
+  my_title <- paste0("Mortality of ", selected_species, "\n")
 }
 
-## My adaptation of the online tutorial
-tmp <- data |> mutate(v1 = 1,
-                      v2 = 2)
+# GROWTH - Basal Area
+if (selected_var == "ba_growth_abs") {
+  legend_txt <- expression(paste("\nTree Growth [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
+  breaks     <- c(-Inf, 5, 10, 15, 20, 25, Inf)
+  breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+                  paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  palette_txt <- "Greens"
+  caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / 5"
+  my_title <- paste0("Growth of ", selected_species, "\n")
+}
 
-ppp <- 
-  tmp %>%
-  filter(homecontinent=='Europe') %>%
-  ggplot( aes(x=homelon, y=homelat)) + 
-  # geom_hex(bins=59) +
+if (selected_var == "ba_growth_rate") {
+  legend_txt <- expression(paste("\nTree Growth Rate [%-basal area ",yr ^ -1, "]"))
+  breaks     <- c(-Inf, 0.5, 1, 1.5, 2, 2.5, 3, Inf)
+  breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+                  paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  palette_txt <- "Greens"
+  caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / ([BA of survivors at 1st visit]) 5"
+  my_title <- paste0("Growth of ", selected_species, "\n")
+}
+
+# MORTALITY - Basal Area
+if (selected_var == "ba_loss_abs") {
+  legend_txt <- expression(paste("\nTree Mortality [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
+  breaks     <- c(-Inf, 1, 2, 3, 4, 5, Inf)
+  breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+                  paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  palette_txt <- "Reds"
+  caption_txt <- "\nMortality = [BA of trees that died between census] / 5"
+  my_title <- paste0("Mortality of ", selected_species, "\n")
+}
+
+if (selected_var == "ba_loss_rate") {
+  legend_txt <- expression(paste("\nTree Mortality Rate [%-basal area ",yr ^ -1, "]"))
+  breaks     <- c(-Inf, 0.25, 0.5, 1.75, 1, 1.25, Inf)
+  breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+                  paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  palette_txt <- "Reds"
+  caption_txt <- "\nMortality = [BA of trees that died between census] / [BA of all alive trees at 1st visit] / 5"
+  my_title <- paste0("Mortality of ", selected_species, "\n")
+}
+
+# Turn variable into classes
+df_plot <-
+  df_plot |> 
+  mutate(clss = 
+           cut(get(selected_var), 
+               breaks = breaks, 
+               labels = breaks_txt, 
+               include.lowest = TRUE)
+         )
+
+# Custom Theme
+theme_custom <-
+  theme_void() +
+  theme(
+    plot.margin = margin(1, 1, 10, 1, "pt"),
+    plot.background = element_rect(fill = "white", color = NA),
+    plot.title = 
+      element_text(
+        hjust = 0.5,
+        face = "bold"
+      ),
+    legend.position = "bottom",
+    legend.title = element_text(
+      hjust = 0.5,
+      color = "black",
+      face = "bold"
+    ),
+    legend.text = element_text(color = "black"),
+    plot.caption = element_text(hjust = 0.5),
+    strip.text = element_text(size = 10, face = "bold") # facet wrap titles
+    
+  )
+
+p <- 
+  df_plot |> drop_na(NAME_1) |> 
+  ggplot(aes(fill = clss, color = clss)) +
+  geom_sf(lwd = 0.1) +
+  facet_wrap(~census_interval, nrow = 2) +
+  scale_fill_brewer(
+    palette   = palette_txt,
+    na.value = "grey80",
+    name = legend_txt
+    ) +
+  scale_color_brewer(
+    palette   = palette_txt,
+    na.value = "grey80",
+    name = legend_txt
+    ) +
+  # scale_fill_viridis_d(
+  #   option   = "A",
+  #   na.value = "grey90",
+  #   name = legend_txt
+  #   ) +
+  # scale_color_viridis_d(
+  #   option   = "A",
+  #   na.value = "grey90",
+  #   name = legend_txt
+  #   ) +
+  guides(fill = guide_legend(nrow = 2, title.position = "top")) +
+  labs(title = my_title,
+       caption = caption_txt) +
+  theme_custom
+p
+```
+
+```{r}
+p
+```
+
+### WIP ---
+
+```{r}
+# geom_hex(bins=59) +
   # stat_summary_hex(bins = 59, aes(z = sum(v1, v2))) +
-  stat_summary_hex(bins = 59, fun= ~sum(v1,2)) +
-  ggplot2::annotate("text", x = -27, y = 72, label="Where people tweet about #Surf", colour = "black", size=5, alpha=1, hjust=0) +
-  ggplot2::annotate("segment", x = -27, xend = 10, y = 70, yend = 70, colour = "black", size=0.2, alpha=1) +
+  stat_summary_hex(bins = 59, fun = ~ sum(v1, 2)) +
+  ggplot2::annotate(
+    "text",
+    x = -27,
+    y = 72,
+    label = "Where people tweet about #Surf",
+    colour = "black",
+    size = 5,
+    alpha = 1,
+    hjust = 0
+  ) +
+  ggplot2::annotate(
+    "segment",
+    x = -27,
+    xend = 10,
+    y = 70,
+    yend = 70,
+    colour = "black",
+    size = 0.2,
+    alpha = 1
+  ) +
   theme_void() +
   xlim(-30, 70) +
   ylim(24, 72) +
@@ -1228,195 +1017,37 @@ ppp <-
   #   option="B",
   #   trans = "log",
   #   # breaks = c(1,7,54,403,3000),
-  #   name="Tweet # recorded in 8 months", 
-  #   guide = guide_legend( keyheight = unit(2.5, units = "mm"), keywidth=unit(10, units = "mm"), label.position = "bottom", title.position = 'top', nrow=1) 
+  #   name="Tweet # recorded in 8 months",
+  #   guide = guide_legend( keyheight = unit(2.5, units = "mm"), keywidth=unit(10, units = "mm"), label.position = "bottom", title.position = 'top', nrow=1)
   # )  +
-  ggtitle( "" ) +
+  ggtitle("") +
   theme(
     legend.position = c(0.8, 0.09),
-    legend.title=element_text(color="black", size=8),
+    legend.title = element_text(color = "black", size = 8),
     text = element_text(color = "#22211d"),
-    plot.background = element_rect(fill = "#f5f5f2", color = NA), 
-    panel.background = element_rect(fill = "#f5f5f2", color = NA), 
+    plot.background = element_rect(fill = "#f5f5f2", color = NA),
+    panel.background = element_rect(fill = "#f5f5f2", color = NA),
     legend.background = element_rect(fill = "#f5f5f2", color = NA),
-    plot.title = element_text(size= 13, hjust=0.1, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+    plot.title = element_text(
+      size = 13,
+      hjust = 0.1,
+      color = "#4e4d47",
+      margin = margin(
+        b = -0.1,
+        t = 0.4,
+        l = 2,
+        unit = "cm"
+      )
+    ),
   )
-
-ppp
 ```
 
-## Stackoverflow
-https://stackoverflow.com/questions/76153155/creating-a-hexagonal-map-from-a-shapefile-in-r
-
-```{r}
-library("sf")
-library("tidyverse")
-library("rnaturalearth")
-library("rnaturalearthdata")
-```
-
-```{r}
-# Original
-UK <- ne_countries(scale = "large",
-                   country = "United Kingdom",
-                   returnclass = "sf") |>
-  st_geometry() |> ## only geometry needed to clip the hexagonal grid
-  st_transform(27700) ## reproject to British National Grid
-
-
-hexgrid <- st_make_grid(UK,
-               cellsize = 2e4, ## unit: metres; change as required
-               what = 'polygons',
-               square = FALSE ## !
-               ) |>
-  st_as_sf()
-
-hexgrid_UK <- hexgrid[c(unlist(st_contains(UK, hexgrid)), 
-                        unlist(st_overlaps(UK, hexgrid))) ,]
-
-ggplot() +
-  geom_sf(data = hexgrid_UK)
-```
-
-```{r}
-FR <- ne_countries(scale = "large",
-                   geounit = "France",
-                   returnclass = "sf") |>
-  st_geometry() |> ## only geometry needed to clip the hexagonal grid
-  st_transform(27700) ## reproject to British National Grid
-
-
-hexgridFR <- st_make_grid(FR,
-               cellsize = 2e4, ## unit: metres; change as required
-               what = 'polygons',
-               square = FALSE ## !
-               ) |>
-  st_as_sf()
-
-hexgrid_FR <- hexgrid[c(unlist(st_contains(FR, hexgridFR)), 
-                        unlist(st_overlaps(FR, hexgridFR))) ,]
-
-ggplot() +
-  geom_sf(data = hexgrid_FR)
-```
-
-## Blogpost
-
-Link: https://strimas.com/post/hexagonal-grids/
-
-```{r}
-study_area <- getData("GADM", country = "LKA", level = 0, path = tempdir()) %>% 
-  disaggregate %>% 
-  geometry
-study_area <- sapply(study_area@polygons, slot, "area") %>% 
-  {which(. == max(.))} %>% 
-  study_area[.]
-plot(study_area, col = "grey50", bg = "light blue", axes = TRUE, cex = 20)
-text(81.5, 9.5, "Study Area:\nSri Lanka")
-```
-
-
-### My adaptation
-```{r}
-# df_tmp from above WIP section
-
-df_xxx <- 
-  df_tmp |> 
-  select(-data) |> 
-  ungroup() |> 
-  left_join(df_comb_qc |> ungroup() |> select(idp, lat, lon) |> distinct())
-
-df_xxx <- 
-  df_xxx |> 
-  group_by(lat, lon) |> 
-  nest() |> 
-  ungroup() |> 
-  rename(d = data)
-  
-
-tmp_fct <- function(d) {
-  n_rec_yr = log(sum(d$n_fin) / sum(d$n_sur)) / 5
-}
-
-df_xxx |> 
-  ggplot() +
-  aes(x = lon, y = lat, z = d) +
-  stat_summary_hex(bins = 59, fun = ~tmp_fct(.x))
-```
-
-
-
-```{r}
-# your_data <- df_xxx
-# Sample data creation
-set.seed(42)  # for reproducibility
-
-# Generate random data
-lon <- runif(100, min = 110, max = 120)
-lat <- runif(100, min = 220, max = 230)
-var1 <- rpois(100, lambda = 5)
-var2 <- rpois(100, lambda = 3)
-
-your_data <- data.frame(lon, lat, var1, var2)
-
-# Create hexagon binning
-hex_bins <- hexbin(x = your_data$lon, y = your_data$lat, xbins = 10)
-
-# Extract hexagon IDs from hexbin object
-hex_ids <- cell2xy(hex_bins)
-
-# Add hexagon IDs to your data
-your_data$hex_id <- as.vector(apply(hex_ids, 2, function(x) hexbin::cellNumber(hex_bins, x[1], x[2])))
-
-# Summarize data within each hexagon
-summary_data <- your_data %>%
-  group_by(hex_id) %>%
-  summarise(
-    sum_var1 = sum(var1),
-    sum_var2 = sum(var2)
-  )
-
-# Calculate the ratio of sum_var2 to sum_var1
-summary_data$var_ratio <- summary_data$sum_var2 / summary_data$sum_var1
-
-# Merge summary data back to hexagon information
-hexagon_data <- hex_bins@hexcoords %>%
-  data.frame() %>%
-  cbind(summary_data)
-
-# Create hexbin plot
-ggplot(hexagon_data, aes(x = x, y = y, fill = var_ratio)) +
-  geom_hex(stat = "identity", bins = 10) +
-  scale_fill_gradient(low = "blue", high = "red", name = "Variable Ratio") +
-  labs(title = "Hexbin Plot with Variable Sum Ratio",
-       x = "Longitude", y = "Latitude") +
-  theme_minimal()
-```
-
-
-```{r}
-library(dplyr)
-library(ggplot2)
-
-# Define the custom function for stat_summary_hex
-custom_fun <- function(z) {
-  sum(z$var2) / sum(z$var1)
-}
-
-# Create the hexbin plot
-your_data %>%
-  ggplot(aes(x = lon, y = lat, z = var1)) +
-  stat_summary_hex(fun = custom_fun, bins = 30, color = "white", size = 0.5) +
-  labs(title = "Hexbin Plot with Custom Summary Function",
-       x = "Longitude", y = "Latitude") +
-  theme_minimal()
-
-```
-
+# Hexagonal Maps
+## Get shapefile
 
 ```{r}
 # Replace 'path/to/your_shapefile.shp' with the actual path to your shapefile
-shapefile_path <- here("data/raw/maps/qgis-hexmap_fr_20231005-1350.shp")
+shapefile_path <- here("qgis-project/testfile.shp")
 
 # Load the shapefile
 your_shapefile <- st_read(shapefile_path)
@@ -1512,7 +1143,7 @@ p <-
 
 ggsave(
   paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
+    "figures/", format(Sys.time(), format = "%Y-%m-%d"), "/",
     format(Sys.time(), format = "%H%M%S"), "_plot_",
     selected_species, "_gain-versus-loss-region-level_ABSOLUTE-VALUES.pdf"),
   p,
@@ -1568,7 +1199,7 @@ p <-
 
 ggsave(
   paste0(
-    "figures/", format(Sys.time(), format = "%Y-%d-%m"), "/",
+    "figures/", format(Sys.time(), format = "%Y-%m-%d"), "/",
     format(Sys.time(), format = "%H%M%S"), "_plot_",
     selected_species, "_mortality-versus-recruitment-region-level.pdf"),
   p,
