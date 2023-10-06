@@ -15,7 +15,7 @@ packages <- c(
   "tidyverse", "purrr",
   
   # Plotting
-  "ggplot2", "ggridges", "patchwork",
+  "ggplot2", "ggridges", "patchwork", "Cairo",
   
   # Spatial data
   "terra", "leaflet", "sp", "sf", "raster",
