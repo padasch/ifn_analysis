@@ -12,13 +12,8 @@ source(here::here("R/_setup.R"))
 dir_tmp <- get_todays_file_directory("figures")
 ```
 
-## Summary
-
--   For this subset analysis, we will focus only on sites that were revisited and that have explicit information on the change in circumference (re-measured circumference or indicator why circumference was not re-measured).
-
-## Create Clean Dataset
-
-### Expand data to one tree per row
+# Data Cleaning
+## Widen data to one tree per row
 ```{r}
 # Get raw data
 data <- suppressWarnings(f_get_raw_data_list())
@@ -65,7 +60,7 @@ if (length(unique(df_loc_wide$idp)) != nrow(df_loc_wide)) {stop("QC FAILED!")}
 if (length(unique(df_tree_wide$tree_id)) != nrow(df_tree_wide)) {stop("QC FAILED!")}
 ```
 
-### Recruitment - Merge Data Structures
+## Wrangle recruitment data
 ```{r, eval=FALSE}
 # Correction for newly grown trees. Below, their state is assigned to their first
 # measurement but that occurred during the second visit. To keep data consistent,
@@ -80,12 +75,13 @@ df_split_keep <- df_tree_wide[-idx, ]
 
 # Overwrite data so that the variables have the same meaning like revisited trees
 
-# - Overwrite veget with veget5 (veget is all "alive" for newly sampled trees),
-# because otherwise they would not have grown to be included in the census
+# - Overwrite veget with veget5. veget is all "alive" for newly sampled trees,
+#   because otherwise they would not have grown to be included in the census
 df_split_new$veget5 <- df_split_new$veget
 df_split_new$veget  <- "0"
 
 # - Overwrite circumference growth
+#   Making the assumption that C13 was = at first visit because 
 df_split_new$c13_1 <- df_split_new$c13_2
 df_split_new$c13_1 <- 0
 
@@ -131,9 +127,12 @@ load_or_save_latest_file("df_comb", "load")
 head(df_comb)
 ```
 
-### Attach tree information
-#### Attach tree state information
+## Add tree information
+### Status
 ```{r}
+# Use df_tmp
+df_tmp <- df_comb
+
 # Get key-value dictionary
 tree_state_dict <- get_tree_state_dictionary()
 
@@ -141,7 +140,7 @@ tree_state_dict <- get_tree_state_dictionary()
 df_comb_tree_state <- 
   
   # Take updated dataframe
-  df_comb |> 
+  df_tmp |> 
   
   # Attach information on state of tree at first visit
   left_join(
@@ -159,61 +158,63 @@ df_comb_tree_state <-
              tree_state_2 = tree_state,
              alive_but_injured_2 = alive_but_injured,
              mode_of_death_2 = mode_of_death),
-    by = join_by(veget5)) 
+    by = join_by(veget5)) |> 
+  
+  # Add info on tree state change
+  mutate(
+    tmp = paste0(tree_state_1, "_", tree_state_2),
+    tree_state_change = NA,
+    tree_state_change = ifelse(tmp == "alive_alive", "survived", tree_state_change),
+    tree_state_change = ifelse(tmp == "alive_dead", "died", tree_state_change)
+  ) |> 
+  select(-tmp)
 ```
 
-#### Attach tree class information
+### Species
 ```{r}
+# Use df_tmp
+df_tmp <- df_comb_tree_state
+
 # Get key-class dictionary
 tree_class_dict <- get_tree_class_dictionary(l_raw_data, l_metadata)
 
 # Attach dictionary
 df_comb_tree_class <- 
-  df_comb_tree_state |> 
+  df_tmp |> 
   left_join(tree_class_dict |> 
               rename(espar = lvl_french) |> 
               mutate(tree_class = as.factor(tree_class)),
             by = join_by(espar))
 ```
 
-### Filter for relevant trees
+### Size & age class
 ```{r}
-df_comb_filtered <-
+# Define criteria for age breaks
+age_max     <- 100
+age_stepsize <- 15
+
+height_max     <- 30
+height_stepsize <- 5
+  
+age_breaks     <- c(seq(0, age_max, age_stepsize), Inf)
+age_breaks_txt <- c(paste0("<", age_breaks[2:(length(age_breaks) - 1)], "yrs"),
+                    paste0("≥", age_breaks[(length(age_breaks) - 1)], "yrs"))
+
+height_breaks     <- c(seq(0, height_max, height_stepsize), Inf)
+height_breaks_txt <- c(paste0("<", height_breaks[2:(length(height_breaks) - 1)], "m"),
+                       paste0("≥", height_breaks[(length(height_breaks) - 1)], "m"))
+
+df_plus_age_height_classes <- 
   df_comb_tree_class |> 
-  filter(
-    
-    # Data for first visits before 2009 is not cleaned yet, so removing it for now
-    campagne_1 > 2009,
-    
-    # Keep revisited trees with a first c13 measurement
-    (revisit_state == "revisited" & !is.na(c13_1)) | 
-      
-    # Keep trees that have been newly sampled and measured
-    (revisit_state == "newly_sampled" & !is.na(c13_2)),
-    
-    # Remove trees that have been dead or cut at first visit already
-    !(revisit_state == "revisited" & (tree_state_1 %in% c("dead", "cut"))),
-    
-    # Remove trees that have not been found again for some reason
-    !(revisit_state == "revisited" & veget5 == "N"),
-    
-    # Keep only trees that belong to the target stand
-    !(identical(cible, NA) | identical(cible, 0)),
-    
-    # Remove trees that are missing xy-coordinates
-    !is.na(lat),
-    !is.na(lon)
-    
-    # Trees that were fully measured and not simplified
-    # simplif == 0
-    ) 
+  mutate(age_class    = cut(age13,  age_breaks,    age_breaks_txt, include.lowest = TRUE),
+         height_class = cut(htot,   height_breaks, height_breaks_txt, include.lowest = TRUE))
+
+# Create df_tmp for next chunk
+df_tmp <- df_plus_age_height_classes
 ```
 
-### Attach GEO information
+## Add geo info
 ```{r}
-# Get temporary dataframe
-df_tmp <- df_comb_filtered
-
 # Get information on region, based on coordinates
 df_geo <- match_coordinates_to_french_region(df_tmp)
 
@@ -232,11 +233,8 @@ df_comb_geo <-
   )
 ```
 
-### Calculate Shadow Growth of Circumference
-
-TODO: THIS SHOULD BE DONE EARLIER, ACTUALLY BEFORE THE ASSESSMENT OF REVISITED OR NOT REVISITED! THEN, WE CAN USE THE SHADOW GROWTH FOR TREES THAT HAVE BEEN RE-ASSESSED AS HAVING SURVIVED/DIED/CUT. ELSE, THEY SHOULD BE DROPPED.
-
-#### Cut Trees
+## Add Shadow Growth of Circumference
+### Cut Trees
 ```{r}
 # Create temporary df for this section
 df_tmp <- df_comb_geo
@@ -268,14 +266,14 @@ if (length(idx) != 0) {
 } else {
   df_comb_shadow_cut <- df_tmp
 }
+
+# Create df_tmp for next chunk
+df_tmp <- df_comb_shadow_cut
 ```
 
-#### Not re-measured dead trees
+### Not re-measured dead trees
 ```{r}
-# Create temporary df
-df_tmp <- df_comb_shadow_cut
-
-# Split datasets into cut and not cut
+# Create subset for not re-measured dead trees
 idx <- which(df_tmp$tree_state_2 == "dead" & is.na(df_tmp$c13_2))
 
 # Do splitting only if index is not empty
@@ -301,14 +299,14 @@ if (length(idx) != 0) {
 } else {
   df_comb_shadow_dead <- df_tmp
 }
+
+# Create df_tmp for next chunk
+df_tmp <- df_comb_shadow_dead
 ```
 
-#### Not re-measured alive trees
+### Not re-measured alive trees
 ```{r}
-# Create temporary df
-df_tmp <- df_comb_shadow_dead
-
-# Split datasets into trees that survived
+# Create subset for not re-measured alive trees
 idx <- which(df_tmp$tree_state_2 == "alive" & is.na(df_tmp$c13_2))
 
 # Do splitting only if index is not empty
@@ -338,49 +336,524 @@ if (length(idx) != 0) {
 
 ```{r}
 # QC
-df_comb_shadow_alive |> 
-  filter(revisit_state == "newly_sampled") |> 
-  relocate(c13_1, c13_2, tree_state_1, tree_state_2, revisit_state, tree_id)
+# df_tmp |> 
+  # filter(revisit_state == "newly_sampled") |> 
+  # relocate(c13_1, c13_2, tree_state_1, tree_state_2, revisit_state, tree_id)
 ```
 
-### Calculate growth, biomass, etc.
+## Calculate ∆ C13, DBH, BA
 ```{r}
-# Get temporary df
-df_tmp <- df_comb_shadow_alive
+# Create df_tmp
+df_tmp <- df_comb_shadow_dead
 
-# Attache size related variables
+# Attach size related variables
 df_comb_size <- 
   df_tmp |> 
   # Attach size related variables
   mutate(
-    # Add plot size variable
+    # Add plot size variable (plot of radius 25m)
     plot_area = 25^2 * pi / 10^5, # (25m)^2 * pi / 10000 [m^2/ha] = [ha]
     
+    # C13
+    c13_change_abs_yr  = ( c13_2 - c13_1 ) / 5,
+    c13_change_perc_yr =  c13_change_abs_yr / c13_1 * 100,
+    
     # Diameter
-    dbh_1 = c13_1 / pi,
-    dbh_2 = c13_2 / pi,
+    dbh_1         = c13_1 / pi,
+    dbh_2         = c13_2 / pi,
+    dbh_change_abs_yr  = ( dbh_2 - dbh_1 ) / 5,
+    dbh_change_perc_yr =  dbh_change_abs_yr / dbh_1 * 100,
     
     # Basal Area
-    ba_1  = pi * ( dbh_1 / 2 ) ^ 2 / plot_area,
-    ba_2  = pi * ( dbh_2 / 2 ) ^ 2 / plot_area
+    ba_1         = pi * ( dbh_1 / 2 ) ^ 2 / plot_area,
+    ba_2         = pi * ( dbh_2 / 2 ) ^ 2 / plot_area,
+    ba_change_abs_yr  = ( ba_2 - ba_1 ) / 5,
+    ba_change_perc_yr =  ba_change_abs_yr / ba_1 * 100,
   ) |> 
   select(-plot_area)
 ```
 
-#### Quality controls
+## Variable Aggregation
+### Variables Overview
+
+#### Placette
+
+*PRELEV5:*
+Indicator for cutting
+  -   0 = No trees cut within plot
+  -   1 = Some trees cut within plot
+  -   2 = All trees cut within plot
+
+*PEUPNR*
+Indicator if site was censusable
+  -   0 = censusable
+  -   1 = non-censusable
+  -   2 = temporarily deforested
+
+*CSA*
+Ground Cover
+  -   1	Closed wooded cover
+  -   2	Grove
+  -   3	Open wooded cover
+  -   4	Heath
+  -   5	Poplar grove
+  -   6	Other vegetation (cultivated shrublands)
+  -   7	Artificialized without vegetation
+  -   8	Natural without vegetation (not present in the dataset)
+  -   9	Outside territory (not present in the dataset)
+  
+*UTIP*
+Predominant Land Use
+Variable holds no useful information, most data is NA or "Other"
+  -   A = Agriculture
+  -   X = Other use
+
+*UTA1 & UTA2*
+Primary and Secondary Land Use (similar as UPTIP but more precise)
+  -   0 = Wood production
+  -   2 = Home, leisure, public park, housing, private park, enclosures
+  -   3 = Active military maneuvering ground or prohibited area
+  -   4 = Integral reserve with forbidden access
+  -   5 = Other reserves
+  -   6 = Agricultural
+  -   8 = Soil and water protection
+  -   9 = No use
+  -   A = Network passage
+  -   B = Large linear infrastructure right-of-way
+  -   X = No use
+
+*AUTUT*
+Other Land Use
+-   0 = No use
+-   1 = Military terrain 
+-   2 = Reserve other than full access prohibited
+-   3 = Agricultural
+-   4 = Network passthrough and firewall
+-   5 = Home, leisure
+-   6 = Fenced forest for hunting
+-   A = Agriculture
+-   F = Fire wall
+-   G = Hunting
+-   L = Home and leisure (compatible with wood production)
+-   M = Military
+-   R = Protected areas
+-   T = Network passage (compatible with wood production)
+-   X = ???
+
+
+### Land Use
 ```{r}
-# Remove all alive trees that have a change of -0.05/yr, because that is likely
-# and measurement error and trees should not shrink substantially.
-df_comb_qc <- 
-  df_comb_size |> 
-  mutate(c13_change = ( dbh_2 - dbh_1 ) / dbh_1 / 5 ,
-         c13_change = round(c13_change * 100)
-         ) |>
-  filter(c13_change > -5)
+# Define Functions
+classify_utip <- function(input){
+  if (input %in% c(NA))  return(NA)
+  if (input %in% c("A")) return("Agriculture")
+  if (input %in% c("X")) return("Other")
+}
+
+classify_autut <- function(input){
+  if (input %in% c(NA)) return(NA)
+  if (input %in% c("0")) return("No Use")
+  if (input %in% c("A", "3")) return("Agriculture")
+  if (input %in% c("G", "6")) return("Hunting")
+  if (input %in% c("L", "5")) return("Leisure")
+  if (input %in% c("M", "1")) return("Military")
+  if (input %in% c("R", "2")) return("Protected")
+  if (input %in% c("T", "F", "4")) return("Infrastructure")
+  if (input %in% c("X")) return(NA)
+}
+
+classify_uta <- function(input){
+  if (is.na(input)) return(NA)
+  if (input %in% c("0")) return("Wood Production")
+  if (input %in% c("2")) return("Leisure")
+  if (input %in% c("3")) return("Military")
+  if (input %in% c("4")) return("Protected")
+  if (input %in% c("5")) return("Protected")
+  if (input %in% c("6")) return("Agriculture")
+  if (input %in% c("8")) return("Protected")
+  if (input %in% c("9")) return("No Use")
+  if (input %in% c("A")) return("Infrastructure")
+  if (input %in% c("B")) return("Infrastructure")
+  if (input %in% c("X")) return("No Use")
+}
+
+classify_land_use <- function(uta1, uta2, utip_1, utip_2, autut_1, autut_2){
+  if (!is.na(uta1)) return(uta1)
+  if (!is.na(uta2)) return(uta2)
+  if (utip_1 %in% c("Agriculture")) return(utip_1)
+  if (utip_2 %in% c("Agriculture")) return(utip_2)
+  if (!is.na(autut_1)) return(autut_1)
+  if (!is.na(autut_2)) return(autut_2)
+  return(NA)
+}
 ```
 
-## Define most dominant genus per department
 ```{r}
+# Apply Functions
+df_tmp <- df_comb_size
+
+df_landuse <- 
+  df_tmp |> 
+  rowwise() |> 
+  mutate(
+    uta1         = classify_uta(uta1),
+    uta2         = classify_uta(uta2),
+    autut_1      = classify_autut(autut_1),
+    autut_2      = classify_autut(autut_2),
+    utip_1       = classify_utip(utip_1),
+    utip_2       = classify_utip(utip_2)
+    )
+
+df_landuse_merged <- 
+  df_landuse |> 
+  mutate(
+    land_use = classify_land_use(uta1, uta2, utip_1, utip_2, autut_1, autut_2),
+    land_use = as.factor(land_use)
+  )
+```
+
+### Variables of Change
+```{r}
+# Create Functions
+
+classify_tree_cover_change <- function(input_1, input_2){
+  # Potential changes are: 
+  # df_tmp |> mutate(cc = paste0(csa_1, "_", csa_2)) |> pull(cc) |> unique()
+  
+  if (input_1 %in% c(NA) | input_2 %in% c(NA)) return(NA)
+  if (input_1 == input_2) return("No Change")
+  
+  if (input_1 == 1 & input_2 == 2) return("Decreased Tree Cover")
+  if (input_1 == 1 & input_2 == 3) return("Decreased Tree Cover")
+  if (input_1 == 1 & input_2 == 4) return("Decreased Tree Cover")
+  if (input_1 == 1 & input_2 == 5) return("Decreased Tree Cover")
+  if (input_1 == 1 & input_2 == 6) return("Decreased Tree Cover")
+  if (input_1 == 1 & input_2 == 7) return("Clearcut")
+  if (input_1 == 1 & input_2 == 9) return(NA)
+  
+  if (input_1 == 2 & input_2 == 1) return("Increased Tree Cover")
+  if (input_1 == 2 & input_2 == 3) return("Decreased Tree Cover")
+  if (input_1 == 2 & input_2 == 6) return("Decreased Tree Cover")
+  if (input_1 == 2 & input_2 == 7) return("Clearcut")
+  
+  if (input_1 == 3 & input_2 == 1) return("Increased Tree Cover")
+  if (input_1 == 3 & input_2 == 6) return("Decreased Tree Cover")
+  
+  if (input_1 == 5 & input_2 == 1) return("Increased Tree Cover")
+  if (input_1 == 5 & input_2 == 3) return("Increased Tree Cover")
+  if (input_1 == 5 & input_2 == 6) return("Decreased Tree Cover")
+  stop("New combination for tree cover change detected: ", input_1, " -> ", input_2)
+}
+
+# ______________________________________________________________________________
+classify_land_use_intensity_change <- function(input_1, input_2){
+  # Potential changes are:
+  # df_tmp |> mutate(luc = paste0(land_use, "_", autut_2)) |> pull(luc) |> unique()
+  
+  # Easy Cases
+  if (is.na(input_1) | is.na(input_2)) return(NA)
+  if (input_1 == input_2) return("No Change")
+  
+  # Define order of intensity
+  order_var <- c(
+    "Wood Production",
+    "Agriculture",
+    "Infrastructure",
+    "Military",
+    "Hunting",
+    "Leisure",
+    "No Use",
+    "Protected"
+    )
+  
+  # Define function for comparing order
+  compare_order <- function(var1, var2, order_var) {
+    
+    if (order_var[match(var1, order_var)] < order_var[match(var2, order_var)]) {
+      return("increased")
+      
+    } else if (order_var[match(var1, order_var)] > order_var[match(var2, order_var)]) {
+      return("decreased")
+      
+    } else {
+      return("no change")
+    }
+  }
+  
+  # Apply function
+  compare_order(input_1, input_2, order_var)
+}
+```
+
+```{r}
+# Apply Functions
+df_tmp <- df_landuse_merged
+
+tic()
+df_change <- 
+  df_tmp |> 
+  rowwise() |> 
+  mutate(
+    land_use_change = classify_land_use_intensity_change(land_use, autut_2),
+    cover_change    = classify_tree_cover_change(csa_1, csa_2),
+    land_use_change = as.factor(land_use_change),
+    cover_change    = as.factor(cover_change)
+  ) 
+toc()
+```
+
+### Natural Impact
+```{r}
+
+```
+
+```{r}
+
+```
+
+### Human Impact
+
+New Variables:
+  - human_activity: [NA, none, low, medium, high]
+  - human_activity_var: indicator variable for activity assessment
+  
+Variable Hierarchy:
+  - PRELEV5: Main cutting indicator
+  - DEF5: Clearing indicator
+  - GEST: Management indicator
+  - ELAG: Pruning indicator
+  - NLISI5: Infrastructure establishment indicator
+  - INSTP5: Plantation work indicator
+  - ANDAIN: Windrow indicator
+
+```{r}
+# Define Function
+classify_human_activity <- function(
+    prelev5,
+    def5,
+    gest,
+    elag,
+    nlisi5,
+    instp5,
+    andain){
+  
+  out <- tibble(
+    human_activity     = NA,
+    human_activity_var = NA
+  )
+  
+  ### PRELEV5 ----
+  if (!(prelev5 %in% c(NA))) {
+  
+    out$human_activity_var <- "PRELEV5"  
+    
+    if (prelev5 %in% c(0)) out$human_activity <- "none"
+    if (prelev5 %in% c(1)) out$human_activity <- "medium"
+    if (prelev5 %in% c(2)) out$human_activity <- "high"
+    
+    return(list(out))
+  }
+  
+  ### DEF5 ----
+  if (!(def5 %in% c(NA))) {
+  
+    out$human_activity_var <- "DEF5"  
+    
+    if (def5 %in% c(0)) out$human_activity    <- "none"
+    if (def5 %in% c(1)) out$human_activity    <- "low"
+    if (def5 %in% c(2, 3)) out$human_activity <- "medium"
+    if (def5 %in% c(4, 5)) out$human_activity <- "high"
+    
+    return(list(out))
+  }
+  
+  ### GEST ----
+  if (!(gest %in% c(NA))) {
+  
+    out$human_activity_var <- "GEST"  
+    
+    if (gest %in% c(0)) out$human_activity <- "none"
+    if (gest %in% c(1)) out$human_activity <- "low"
+    if (gest %in% c(2)) out$human_activity <- "high"
+    
+    return(list(out))
+  }
+  
+  ### ELAG ----
+  if (!(elag %in% c(NA))) {
+  
+    out$human_activity_var <- "ELAG"  
+    
+    if (elag %in% c(0)) out$human_activity <- "none"
+    if (elag %in% c(1)) out$human_activity <- "medium"
+    
+    return(list(out))
+  }
+  
+  ### NLISI5 ----
+  if (!(nlisi5 %in% c(NA))) {
+  
+    out$human_activity_var <- "NLISI5"  
+    
+    if (nlisi5 %in% c(0)) out$human_activity <- "none"
+    if (nlisi5 %in% c(1)) out$human_activity <- "low"
+    if (nlisi5 %in% c(2)) out$human_activity <- "medium"
+    if (nlisi5 %in% c(3)) out$human_activity <- "high"
+    
+    return(list(out))
+  }
+  
+  
+  ### INSTP5 ----
+  if (!(instp5 %in% c(NA))) {
+  
+    out$human_activity_var <- "INSTP5"  
+    
+    if (instp5 %in% c(0)) out$human_activity <- "none"
+    if (instp5 %in% c("P", "S")) out$human_activity <- "medium"
+    
+    return(list(out))
+  }
+  
+  ### ANDAIN ----
+  if (!(andain %in% c(NA))) {
+  
+    out$human_activity_var <- "ANDAIN"  
+    
+    if (andain %in% c(0)) out$human_activity <- "none"
+    if (andain %in% c(1)) out$human_activity <- "medium"
+    
+    return(list(out))
+  }
+  
+  return(list(out))
+}
+```
+
+```{r}
+# TODO IS NOT WORKING, TAKES TOO LONG...
+# Apply Function
+df_tmp <- df_change
+
+df_humaninfluence <- 
+  df_tmp |> 
+  mutate(
+    tmp = classify_human_activity(prelev5, def5, gest, elag, nlisi5, instp5, andain),
+  ) |> 
+  unnest(tmp)
+```
+
+
+
+## Filter data
+### Pre-Filter Exploration
+```{r}
+#TODO: Create some scatterplots to detect outliers in size change and so on.
+```
+
+### Site-level
+
+*Decisions:*
+- PRELEV5: Keep only sites that were not cleared or where NA
+- PEUPNR: Keep only sites that were censusable or where NA
+- CSA: No need to filter, plots are from wooded areas (that may have changed into sthg else).
+- LAT/LON: Only keep sites for which we have coordinates
+
+```{r}
+# Get df_tmp
+# TODO df_tmp <- df_humaninfluence # is not working right now!
+df_tmp <- df_change
+
+df_filtered_sites <- 
+  df_tmp |> 
+  filter(
+    prelev5  %in% c(0, 1, NA),
+    peupnr_1 %in% c(0, NA),
+    peupnr_2 %in% c(0, NA),
+    csa_1    %in% c(1, 2, 3, 5, NA),
+    !is.na(lat),
+    !is.na(lon),
+  )
+```
+
+### Tree-level
+
+*Decisions*
+ - Remove trees that were not revisited
+ - For trees that were revisited, keep only those that were alive at first visit.
+ - Keep all newly_sampled trees, even if they were dead.
+ - Remove trees that could not be found again (veget5 == N)
+ - Keep only trees that belong to target stand ???
+ 
+ - Only keep trees for which we know they survived or died: tree_state_change %in% c("survived", "died")
+ 
+```{r}
+df_tmp <- df_filtered_sites
+
+df_filtered_trees <-
+  df_tmp |> 
+  filter(
+    campagne_1 > 2009,
+    tree_state_change %in% c("survived", "died"),
+    cible %in% c(1)
+    ) 
+```
+
+
+```{r}
+df_tmp <- df_filtered_trees
+
+# - Remove all alive trees that have a change of -0.05/yr, because that is likely
+#   and measurement error and trees should not shrink substantially. 
+#   Following method in Eqsuivel et al. 2020.
+# - Replace changes in percent with NA for newly sampled trees because their initial size is 
+#   assumed to be zero and dividing by zero gives non-sense infinity.
+df_comb_qc <- 
+  df_tmp |> 
+  filter(dbh_change_perc_yr > -5) |> 
+  mutate(
+    c13_change_perc_yr = ifelse(c13_change_perc_yr == Inf, NA, c13_change_perc_yr), 
+    dbh_change_perc_yr = ifelse(dbh_change_perc_yr == Inf, NA, dbh_change_perc_yr), 
+    ba_change_perc_yr  = ifelse(ba_change_perc_yr  == Inf, NA, ba_change_perc_yr)
+  )
+```
+
+## Post-Filter QC
+## Quality controls
+```{r}
+# TODO: 
+```
+
+## Add new data
+```{r}
+#TODO Attach data from other NFI datasets!
+```
+
+## Finalize dataset
+### Select final variables
+```{r}
+nfi_dataset_for_analysis <- 
+  df_tmp |> 
+  mutate(
+    census_interval = paste0(campagne_1, "-", campagne_2),
+    census_interval = as.factor(census_interval)
+  )
+
+# TODO: ADD VARIABLE PRE-SELECTION!
+```
+
+### Save RDS
+```{r}
+load_or_save_latest_file("nfi_dataset_for_analysis", "save")
+df_fin <- load_or_save_latest_file("nfi_dataset_for_analysis", "load")
+```
+
+
+# Hexmaps 
+## Get species subset
+
+```{r}
+# Get most dominant species per dep as orientation
 df_dominant_species <-  
   df_comb_qc |> 
   group_by(dep) |> 
@@ -404,65 +877,157 @@ df_dominant_species <-
   select(-data)
 ```
 
-## Create Maps of Change
-### Species Selection
 ```{r}
 df_comb_qc$genus_lat |> table() |> sort(decreasing = T) |> head(10)
 df_comb_qc$species_lat |> table() |> sort(decreasing = T) |> head(10)
 ```
 
 ```{r}
-# Subset for given species
-selected_species <- "Fagus sylvatica"
-species_classification_level <- "species_lat"
-
-selected_species <- "Quercus"
-species_classification_level <- "genus_lat"
-
-# Could be made more flexible with family and other levels
-if (str_detect(species_classification_level, "species")) {
-  idx_majority <- 
-    df_dominant_species |> 
-    filter(str_detect(top_species, selected_species)) |> 
-    pull(dep)
-  
-} else if (str_detect(species_classification_level, "genus")) {
-  idx_majority <- 
-    df_dominant_species |> 
-    filter(str_detect(top_genus, selected_species)) |> 
-    pull(dep)
-}
-
-# Make subset
-df_species <- 
-  df_comb_qc |> 
-  filter(str_detect(get(species_classification_level), selected_species))
-
-# df_species <- 
-#   df_comb_qc |> 
-#   filter(order_lat == "Fagales")
+# # Subset for given species
+# selected_species <- "Fagus sylvatica"
+# species_classification_level <- "species_lat"
+# 
+# selected_species <- "Quercus"
+# species_classification_level <- "genus_lat"
+# 
+# # Could be made more flexible with family and other levels
+# if (str_detect(species_classification_level, "species")) {
+#   idx_majority <- 
+#     df_dominant_species |> 
+#     filter(str_detect(top_species, selected_species)) |> 
+#     pull(dep)
+#   
+# } else if (str_detect(species_classification_level, "genus")) {
+#   idx_majority <- 
+#     df_dominant_species |> 
+#     filter(str_detect(top_genus, selected_species)) |> 
+#     pull(dep)
+# }
+# 
+# # Make subset
+# df_species <-
+#   df_comb_qc |>
+#   filter(str_detect(get(species_classification_level), selected_species))
+# 
+# # df_species <- 
+# #   df_comb_qc |> 
+# #   filter(order_lat == "Fagales")
 
 # QC
-if (nrow(df_species) == 0) stop("Empty df!")
+# if (nrow(df_species) == 0) stop("Empty df!")
 ```
 
-### Hexmaps
-#### Using R hexmap
-
 ```{r}
-df_plot <- 
-  calculate_growth_mortality_per_hexagon(
-    df_species,
-    n_polygons_per_degree = 15,
-    min_ntrees_per_polygon = 5
+my_species_list  <-
+  c(
+    "Quercus",
+    "Pinus",
+    "Fagus",
+    "Carpinus",
+    "Castanea",
+    "Picea",
+    "Abies",
+    "Fraxinus",
+    "Acer",
+    "Betula"
   )
+
+my_polygons_list <- seq(15, 60, 15)
 ```
 
 ```{r}
-create_hexmap_from_aggregated_data("n_mor_yr", df_plot, "save")
+my_files <- list()
+
+for (my_species in my_species_list) {
+  
+  cat("\n", my_species)
+  
+  # Filter for species
+  df_species <- df_comb_qc |> filter(genus_lat == my_species)
+
+  # QC
+  if (nrow(df_species) == 0) stop("Empty df!")
+
+  for (my_polygon in my_polygons_list) {
+    
+    # Settings for hexmaps
+    n_polygons_per_degree  <- my_polygon
+    min_ntrees_per_polygon <-  5
+
+    # Save filename
+    my_filename <- 
+      paste0(
+        here("data/tmp/"),
+        "hexmap_data-",
+        my_species, "-",
+        n_polygons_per_degree, "polygons_per_degree-",
+        min_ntrees_per_polygon, "min_ntrees_per_polygon",
+        ".rds"
+        )
+    
+    my_files <-  append(my_files, my_filename)
+    
+   # Get data     
+    df_plot <- 
+      calculate_growth_mortality_per_hexagon(
+        df_comb_qc,
+        n_polygons_per_degree,
+        min_ntrees_per_polygon
+      )
+    
+    # Save data
+    saveRDS(df_plot, my_filename)
+  }
+}
 ```
 
-### WIP ---
+```{r}
+df_plot <- readRDS(here("data/tmp/hexmap_data-Quercus-30polygons_per_degree-5min_ntrees_per_polygon.rds"))
+create_hexmap_from_aggregated_data("n_mor_yr", df_plot, "return") + theme_classic()
+```
+
+## Other comparisons
+TODO:
+
+- Take care of outlier in ridges without limits
+
+```{r}
+df_species |>
+  drop_na(c13_change_perc_yr, height_class) |>
+  ggplot() +
+  geom_density_ridges(aes(
+    x = c13_change_perc_yr,
+    fill = factor(stat(quantile)),
+    y = height_class,
+    group = height_class
+  )) +
+  stat_density_ridges(
+    geom = "density_ridges_gradient",
+    calc_ecdf = TRUE,
+    quantiles = 4,
+    quantile_lines = TRUE
+  ) +
+  scale_fill_viridis_d(name = "Quartiles") +
+  xlim(-5, 10)
+
+
+df_species |>
+  drop_na(c13_change_perc_yr, age_class) |>
+  mutate(campagne_1 = fct_rev(as.factor(campagne_1))) |> 
+  ggplot() +
+  aes(
+    x = c13_change_perc_yr,
+    y = campagne_1,
+    fill = campagne_1, 
+  ) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 0.5, alpha = 0.7) +
+  xlim(-5, 10) +
+  scale_fill_viridis_d() +
+  facet_wrap(~age_class, nrow = 2)
+```
+
+
+# WIP ---
 
 ```{r}
 # geom_hex(bins=59) +
@@ -569,7 +1134,6 @@ load_or_save_latest_file("df_comb_nature", "save")
 # Classification for natural influence
 
 ```
-
 
 ```{r}
 # Attach information on vegetation state
