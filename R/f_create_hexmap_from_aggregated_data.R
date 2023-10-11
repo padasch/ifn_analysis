@@ -1,7 +1,8 @@
 create_hexmap_from_aggregated_data <- function(
     selected_var = NULL,
     df_plot  = NULL,
-    return_or_save = "return"
+    return_or_save = "return",
+    selected_species = NULL
     ) {
   
   # Input Check
@@ -26,6 +27,9 @@ create_hexmap_from_aggregated_data <- function(
   # return_or_save
   # - Character indicating whether to "save", "return", or do "both"
   if (!(return_or_save %in% c("save", "return", "both"))) stop("return_or_save input is wrong")
+  
+  # selected_species
+  # - String, indicating species that was filtered for
   
   # DEBUG SECTION ----
   # ______________________________________________________________________________
