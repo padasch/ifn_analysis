@@ -14,8 +14,12 @@ packages <- c(
   # Data Wrangling
   "tidyverse", "purrr",
   
-  # Plotting
+  # Data Visualisation
   "ggplot2", "ggridges", "patchwork", "Cairo",
+  "visdat",
+  
+  # Machine Learning
+  "caret", "ranger",
   
   # Spatial data
   "terra", "leaflet", "sp", "sf", "raster",
