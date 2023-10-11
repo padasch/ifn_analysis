@@ -59,7 +59,7 @@ calculate_growth_mortality_per_hexagon <- function(
   cent_no_geom <- cent_clean |> st_drop_geometry()
   
   # Join with grid thanks to id column
-  grd_clean <- grd |> left_join(cent_no_geom)
+  grd_clean <- grd |> left_join(cent_no_geom, by = join_by(polyg_id))
   
   # DEBUG: Check result
   # drop_na() is one way to suppress the cells outside the country
