@@ -12,6 +12,7 @@ match_coordinates_to_french_region <- function(df_input){
   df_tmp <-
     df_input |> 
     select(lat, lon) |> 
+    drop_na() |> 
     distinct() |> 
     rename(Lat = lat,
            Lon = lon) |> 
