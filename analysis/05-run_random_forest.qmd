@@ -1,0 +1,141 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+# Setup
+```{r message=FALSE, warning=FALSE}
+# Source files and packages
+source(here::here("R/_setup.R"))
+
+# Create today's figure directory
+dir_tmp <- get_todays_file_directory("figures")
+```
+
+# Load Data
+```{r}
+load_or_save_latest_file("nfi_dataset_for_analysis", "load")
+df <- nfi_dataset_for_analysis
+```
+
+# Data Inspection
+## Remove unnecessary variables
+
+```{r}
+vec_missing_perc <- colMeans(is.na(df)) * 100
+df_missing_perc  <- 
+  tibble(
+    var = names(vec_missing_perc),
+    val = vec_missing_perc
+    ) |> 
+  arrange(val)
+  
+vars_less_20perc_na <- df_missing_perc |> filter(val < 5) |> pull(var)
+
+df_tmp <- df |> select(any_of(vars_less_20perc_na))
+```
+
+```{r}
+vars_notneeded <- 
+  c("
+    ")
+```
+
+
+## Missing Data
+```{r, eval=FALSE}
+visdat::vis_miss(
+  nfi_dataset_for_analysis |> 
+    select(1:10) |> 
+    slice_sample(n = 20)
+  )
+```
+
+# Data Pre-Processing
+```{r}
+target_variable <- "ba_change_abs_yr"
+
+# TODO SHOULD BE PART OF DATA CLEANING AND NOT MODELLING!
+character_vars <- 
+  df_tmp |> 
+  select_if(is.character) |> 
+  names()
+
+  # Turn all character variables into factor variables
+for (var in character_vars) {
+  df_tmp[[var]] <- as.factor(df_tmp[[var]])
+}
+
+
+df_tmp <- 
+  df_tmp |> 
+  
+  # Remove factor variables with only one level
+  select_if(~ !(is.factor(.) && length(levels(.)) == 1)) |> 
+  
+  # Remove columns that hold only NA
+  select_if(~ !all(is.na(.)))
+```
+
+# Data Splitting
+```{r}
+set.seed(2023)
+idx_train <- 
+  createDataPartition(
+    df_tmp[[target_variable]],
+    p = .8, 
+    list = FALSE, 
+    times = 1
+    )
+
+# TODO: DEBUG Select subset of predictors
+
+# Selection by hand
+subset <- 
+  df_tmp |> 
+  select(
+    
+  ) |> 
+  names()
+
+# Numerics only
+subset <- df_tmp |> select_if(is.numeric) |> names()
+
+# Random number
+# n_preds <- 10
+# subset <- sample(1:ncol(df_tmp), n_preds, replace = TRUE)
+
+df_train <- df_tmp[ idx_train,] |> select(target_variable, subset)
+df_train <- df_train[1:(10^5), ]
+df_test  <- df_tmp[-idx_train,] |> select(target_variable, subset)
+
+# df_train <- df_tmp[ idx_train,]
+# df_test  <- df_tmp[-idx_train,]
+```
+
+
+# Run Model
+```{r}
+library(parallel)
+library(doParallel)
+
+tic()
+# cl <- makePSOCKcluster(9)
+# registerDoParallel(cl)
+
+mod <- train(
+  ba_change_abs_yr ~ ., 
+  data = df_train,
+  method = "ranger",
+  na.action = na.pass
+)
+
+# stopCluster(cl)
+toc()
+beep()
+```
+
+
+# Model Evaluation
+
+# Model Interpretation
