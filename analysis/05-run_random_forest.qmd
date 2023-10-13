@@ -9,7 +9,7 @@ editor_options:
 source(here::here("R/_setup.R"))
 
 # Create today's figure directory
-dir_tmp <- get_todays_file_directory("figures")
+# dir_tmp <- get_todays_file_directory("figures")
 ```
 
 # Load Data
