@@ -10,6 +10,7 @@ packages <- c(
   # Parallel computing
   # "multidplyr", # Parallel computing, keep before tidyverse!
   # "furrr", # Parallel computing
+  "parallel",
   
   # Data Wrangling
   "tidyverse", "purrr",
@@ -22,7 +23,7 @@ packages <- c(
   "caret", "ranger",
   
   # Spatial data
-  "terra", "leaflet", "sp", "sf", "raster",
+  "terra", "leaflet", "sp", "sf", "raster", "stars", "rgee", "rnaturalearth",
   
   # To facilitate coding:
   "tictoc", "beepr"
