@@ -1,10 +1,12 @@
-
-load_or_save_latest_file <- function(data_variable_name, action = "load") {
+load_or_save_latest_file <- function(data_variable, action = "load") {
   
   require(here)
   
   data_dir <- here("data")
   tmp_dir <- here(data_dir, "tmp")
+  
+  # Deparse name from data_variable
+  data_variable_name <- deparse(substitute(data_variable))
   
   if (action == "load") {
     # List all RDS files in the tmp directory that match the data_variable_name
@@ -38,7 +40,13 @@ load_or_save_latest_file <- function(data_variable_name, action = "load") {
     formatted_datetime <- format(current_datetime, "%Y%m%d-%H%M%S")
     
     # Define the RDS file name using the input data_variable_name and creation date
-    rds_file_name <- file.path(tmp_dir, paste0(formatted_datetime, "_", data_variable_name, ".rds"))
+    rds_file_name <- 
+      file.path(
+        tmp_dir, 
+        paste0(
+          formatted_datetime, "_", 
+          data_variable_name,
+          ".rds"))
     
     # Save the object to an RDS file
     saveRDS(get(data_variable_name, envir = .GlobalEnv), file = rds_file_name)
