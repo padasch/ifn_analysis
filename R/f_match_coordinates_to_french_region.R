@@ -6,7 +6,7 @@ match_coordinates_to_french_region <- function(df_input){
   }
   
   # Get the shapefile data for France
-  sf_france <- get_shapefile_france()
+  sf_france <- get_shapefile_france("dep") |> st_transform("WGS84")
   
   # Wrangle input dataframe to temporary one
   df_tmp <-
@@ -31,7 +31,7 @@ match_coordinates_to_french_region <- function(df_input){
   # Get index
   na_idx <- 
     locations_with_regions |> 
-    filter(is.na(NAME_2)) |> 
+    filter(is.na(dep)) |> 
     pull(id)
   
   if (length(na_idx) != 0) {
@@ -49,25 +49,11 @@ match_coordinates_to_french_region <- function(df_input){
     
     for (i in 1:nrow(df_naloc)) {
       
-      # Get information on closes polygon
+      # Get information on closest polygon
       df_i   <- 
         sf_france[which.min(st_distance(sf_france, df_naloc[i,])),] |> 
         as_tibble() |> 
-        select(
-          GID_0,
-          NAME_0,
-          GID_1,
-          NAME_1,
-          NL_NAME_1,
-          GID_2,
-          NAME_2,
-          VARNAME_2,
-          NL_NAME_2,
-          TYPE_2,
-          ENGTYPE_2,  
-          CC_2,  
-          HASC_2
-        )
+        select(dep)
       
       # Attach polygon information to location dataframe
       df_i <- cbind(df_naloc[i, ], df_i)
@@ -97,7 +83,9 @@ match_coordinates_to_french_region <- function(df_input){
         rename(lat = Y, lon = X),
       
       # Replace geometry by lat lon data
-      df_final |> as_tibble() |> select(-geometry)
+      df_final |> 
+        as_tibble() |> 
+        select(-geometry)
     )
   
   return(df_final)

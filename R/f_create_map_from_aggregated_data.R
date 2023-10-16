@@ -141,7 +141,7 @@ create_hexmap_from_aggregated_data <- function(
   
   # Make plot ----
   p <- 
-    df_plot |> drop_na(NAME_1) |> 
+    df_plot |> drop_na(grouping_region) |> 
     ggplot(aes(fill = clss, color = clss)) +
     geom_sf(lwd = 0.1) +
     facet_wrap(~census_interval, nrow = 2) +

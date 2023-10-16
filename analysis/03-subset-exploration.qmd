@@ -137,7 +137,7 @@ df_tmp <- df_comb
 tree_state_dict <- get_tree_state_dictionary()
 
 # Attach dictionary
-df_comb_tree_state <- 
+df_tmp <- 
   
   # Take updated dataframe
   df_tmp |> 
@@ -158,16 +158,15 @@ df_comb_tree_state <-
              tree_state_2 = tree_state,
              alive_but_injured_2 = alive_but_injured,
              mode_of_death_2 = mode_of_death),
-    by = join_by(veget5)) |> 
-  
-  # Add info on tree state change
+    by = join_by(veget5)) 
+
+# Add info on tree state change
+df_comb_tree_state <- 
+  df_tmp |> 
   mutate(
-    tmp = paste0(tree_state_1, "_", tree_state_2),
-    tree_state_change = NA,
-    tree_state_change = ifelse(tmp == "alive_alive", "survived", tree_state_change),
-    tree_state_change = ifelse(tmp == "alive_dead", "died", tree_state_change)
-  ) |> 
-  select(-tmp)
+    tree_state_1      = ifelse(revisit_state == "newly_sampled", "new", tree_state_1),
+    tree_state_change = as.factor(paste0(tree_state_1, "_", tree_state_2))
+    ) 
 ```
 
 ### Species
@@ -208,36 +207,44 @@ df_plus_age_height_classes <-
   df_comb_tree_class |> 
   mutate(age_class    = cut(age13,  age_breaks,    age_breaks_txt, include.lowest = TRUE),
          height_class = cut(htot,   height_breaks, height_breaks_txt, include.lowest = TRUE))
-
-# Create df_tmp for next chunk
-df_tmp <- df_plus_age_height_classes
 ```
 
 ## Add geo info
 ```{r}
-# Get information on region, based on coordinates
-df_geo <- match_coordinates_to_french_region(df_tmp)
+# STATE 16. Oct:
+# I was fixing the shapefile dependency and merging routine when I realised that there is not
+# really any important data added here. The lat lon coords are already attached and else,
+# there is not much interesting to gain here. So, commenting it out for now.
 
-# Match region code number with region name
-df_comb_geo <- 
-  left_join(
-    df_tmp,
-    df_geo |> 
-      rename(dep = CC_2,
-             dep_name = NAME_2,
-             region_code = GID_1,
-             region_name = NAME_1) |> 
-      select(dep, dep_name, region_code, region_name) |> 
-      distinct(),
-    by = join_by(dep)
-  )
+# # Create df_tmp for next chunk
+# df_tmp <- df_plus_age_height_classes
+# 
+# # Merging code for corse to be one department instead of two
+# df_tmp <- 
+#   df_tmp |>  
+#   mutate(dep = ifelse(dep == "2A", "2", dep),
+#          dep = ifelse(dep == "2B", "2", dep))
+# 
+# # Get information on region, based on coordinates
+# df_geo <- match_coordinates_to_french_region(df_tmp)
+# 
+# # Match region code number with region name
+# df_comb_geo <- 
+#   left_join(
+#     df_tmp,
+#     df_geo |> 
+#       mutate(dep = as.factor(dep)) |> 
+#       select(dep, dep_name, reg_name) |> 
+#       distinct(),
+#     by = join_by(dep)
+#   )
 ```
 
 ## Add Shadow Growth of Circumference
 ### Cut Trees
 ```{r}
 # Create temporary df for this section
-df_tmp <- df_comb_geo
+df_tmp <- df_plus_age_height_classes
 
 # Split datasets into cut and not cut
 idx <- which(df_tmp$tree_state_2 == "cut")
@@ -792,7 +799,7 @@ df_filtered_trees <-
   df_tmp |> 
   filter(
     campagne_1 > 2009,
-    tree_state_change %in% c("survived", "died"),
+    tree_state_change %in% c("alive_alive", "alive_dead", "new_alive"),
     cible %in% c(1)
     ) 
 ```
@@ -845,7 +852,8 @@ nfi_dataset_for_analysis <-
 ### Save RDS
 ```{r}
 load_or_save_latest_file(nfi_dataset_for_analysis, "save")
-df_fin <- load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+df <- nfi_dataset_for_analysis
 ```
 
 
@@ -853,34 +861,17 @@ df_fin <- load_or_save_latest_file(nfi_dataset_for_analysis, "load")
 ## Get species subset
 
 ```{r}
-# Get most dominant species per dep as orientation
-df_dominant_species <-  
-  df_comb_qc |> 
-  group_by(dep) |> 
-  nest() |> 
-  mutate(top_genus = map_chr(data,
-                                  ~pull(.,genus_lat) |> 
-                                    table() |> 
-                                    sort(decreasing = TRUE) |> 
-                                    names() |> 
-                                    head(3) |> 
-                                    paste0(collapse = ", ")
-                                    )) |> 
-  mutate(top_species = map_chr(data,
-                                  ~pull(.,species_lat) |> 
-                                    table() |> 
-                                    sort(decreasing = TRUE) |> 
-                                    names() |> 
-                                    head(5) |> 
-                                    paste0(collapse = ", ")
-                                    )) |> 
-  select(-data)
+all_species <- get_most_common_species(df, "genus")
+df_tmp <- df |> filter(genus_lat == "Quercus")
+df_plot <- calculate_growth_mortality_per_area(df_species  = df_tmp, region_type = "se")
+create_hexmap_from_aggregated_data(
+  selected_var = "ba_loss_rate",
+  df_plot  = df_plot,
+  return_or_save = "return",
+  selected_species = "Populus"
+  )
 ```
 
-```{r}
-df_comb_qc$genus_lat |> table() |> sort(decreasing = T) |> head(10)
-df_comb_qc$species_lat |> table() |> sort(decreasing = T) |> head(10)
-```
 
 ```{r}
 # # Subset for given species
