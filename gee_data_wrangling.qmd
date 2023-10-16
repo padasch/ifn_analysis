@@ -1,0 +1,93 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+source(here::here("R/_setup.R"))
+```
+
+# Wrangle Google Earth Engine Data
+## Load data
+```{r}
+load_or_save_latest_file(rgee_filenames, "load")
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+```
+
+```{r}
+dir_rgee <- here("data/raw/gee/")
+df       <- nfi_dataset_for_analysis
+# df_xy    <- df |> ungroup() |> select(lat, lon) |> distinct() |> mutate(site_name = row_number()) |> 
+df_xy    <- df |> ungroup() |> select(lon, lat) |> distinct() |> rename(y = lat, x = lon)
+df_years <- df |> select(campagne_1, campagne_2) |> flatten() |> unlist() |> unique() |> sort()
+```
+
+```{r}
+all_rasters <- stack()
+all_data    <- tibble()
+all_files   <- paste0(dir_rgee, unlist(rgee_filenames), ".tif")
+
+for (my_year in df_years) {
+  
+  cat("\n> Working on year: ", my_year)
+  
+  all_files_year <- all_files[grep(paste0("_to_", my_year), all_files)]
+  
+  if (length(all_files_year) == 0) {
+    next
+  }
+  
+    
+  # Define and match the regular expression
+  regex_pattern <- "\\[rgee_ECMWF-ERA5_LAND-HOURLY_(.*?)\\].*?\\[applied_fct-(.*?)\\].*?\\[([0-9]{4}-[0-9]{2}-[0-9]{2}_to_([0-9]{4})-[0-9]{2}-[0-9]{2})\\]"
+  matches <- str_match(all_files_year, regex_pattern)
+  
+  # Get name of variable
+  my_var <- matches[,2]
+  
+  # Get function that was applied
+  my_fct <- matches[,3]
+  
+  # Get period
+  start_date <- ymd(str_sub(matches[,4], 1, 10))
+  end_date   <- ymd(str_sub(matches[,4], 15, 24))
+  my_period  <- paste(month(start_date, label = TRUE, abbr = TRUE), month(end_date, label = TRUE, abbr = TRUE), sep = "_")
+  
+  # Combine all information into one variable name
+  my_varname <- paste0(my_var, "_", my_fct, "_", my_period) |> tolower()
+  
+  # Load raster stack
+  my_raster <- terra::rast(all_files_year)
+  
+  # Rename names of raster stack with variable defined above
+  names(my_raster) <- my_varname
+
+  # Extract data at sampling locations
+  my_raster_xy <- 
+    terra::extract(
+      my_raster,    # The raster we want to extract from
+      df_xy,        # A matrix of x and y values to extract for
+      ID = FALSE    # To not add a default ID column to the output
+      )
+  
+  # Add data to big dataframe
+  my_df    <- cbind(df_xy, my_raster_xy) |> mutate(campagne_1 = my_year)
+  all_data <- rbind(all_data, my_df)
+}
+```
+
+```{r}
+df_preds <- 
+  nfi_dataset_for_analysis |> 
+  left_join(
+    all_data |> rename(lat = y, lon = x),
+    by = join_by(lon, lat, campagne_1)
+    )
+
+vars_era5 <- get_era5_vars()
+
+df_tmp <- df_preds |> select(contains(vars_era5), ba_change_abs_yr, lat, lon)
+
+```
+
