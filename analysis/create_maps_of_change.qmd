@@ -1,0 +1,23 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r message=FALSE, warning=FALSE}
+# Source files and packages
+source(here::here("R/_setup.R"))
+
+# Create today's figure directory
+# dir_tmp <- get_todays_file_directory("figures")
+```
+
+```{r}
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+```
+
+```{r}
+create_hexmap_from_aggregated_data(
+  
+)
+```
+
