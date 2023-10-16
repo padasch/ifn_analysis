@@ -118,12 +118,12 @@ df_comb$campagne_1 <- as.double(as.character(df_comb$campagne_1))
 df_comb$campagne_2 <- as.double(as.character(df_comb$campagne_2))
 
 # Save data
-load_or_save_latest_file("df_comb", "save")
+load_or_save_latest_file(df_comb, "save")
 ```
 
 ```{r}
 # Load data
-load_or_save_latest_file("df_comb", "load")
+load_or_save_latest_file(df_comb, "load")
 head(df_comb)
 ```
 
@@ -730,7 +730,7 @@ classify_human_activity <- function(
 }
 ```
 
-```{r}
+```{r eval=FALSE}
 # TODO IS NOT WORKING, TAKES TOO LONG...
 # Apply Function
 df_tmp <- df_change
@@ -742,8 +742,6 @@ df_humaninfluence <-
   ) |> 
   unnest(tmp)
 ```
-
-
 
 ## Filter data
 ### Pre-Filter Exploration
@@ -832,6 +830,8 @@ df_comb_qc <-
 ## Finalize dataset
 ### Select final variables
 ```{r}
+df_tmp <- df_comb_qc
+
 nfi_dataset_for_analysis <- 
   df_tmp |> 
   mutate(
@@ -844,8 +844,8 @@ nfi_dataset_for_analysis <-
 
 ### Save RDS
 ```{r}
-load_or_save_latest_file("nfi_dataset_for_analysis", "save")
-df_fin <- load_or_save_latest_file("nfi_dataset_for_analysis", "load")
+load_or_save_latest_file(nfi_dataset_for_analysis, "save")
+df_fin <- load_or_save_latest_file(nfi_dataset_for_analysis, "load")
 ```
 
 
@@ -935,6 +935,7 @@ my_species_list  <-
 my_polygons_list <- seq(15, 60, 15)
 ```
 
+### Loop to save df_plot()
 ```{r}
 my_files <- list()
 
