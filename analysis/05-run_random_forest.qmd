@@ -61,11 +61,10 @@ character_vars <-
   select_if(is.character) |> 
   names()
 
-  # Turn all character variables into factor variables
+# Turn all character variables into factor variables
 for (var in character_vars) {
   df_tmp[[var]] <- as.factor(df_tmp[[var]])
 }
-
 
 df_tmp <- 
   df_tmp |> 
@@ -75,11 +74,16 @@ df_tmp <-
   
   # Remove columns that hold only NA
   select_if(~ !all(is.na(.)))
+
+# SHORTCUT ERA5 TEST
+df_tmp <- df_tmp |> drop_na()
 ```
 
 # Data Splitting
 ```{r}
 set.seed(2023)
+df_tmp <- df_tmp |> slice_sample(n = 200000)
+
 idx_train <- 
   createDataPartition(
     df_tmp[[target_variable]],
@@ -91,46 +95,57 @@ idx_train <-
 # TODO: DEBUG Select subset of predictors
 
 # Selection by hand
-subset <- 
-  df_tmp |> 
-  select(
-    
-  ) |> 
-  names()
-
-# Numerics only
-subset <- df_tmp |> select_if(is.numeric) |> names()
+# subset <- 
+#   df_tmp |> 
+#   select(
+#     
+#   ) |> 
+#   names()
+# 
+# # Numerics only
+# subset <- df_tmp |> select_if(is.numeric) |> names()
 
 # Random number
 # n_preds <- 10
 # subset <- sample(1:ncol(df_tmp), n_preds, replace = TRUE)
 
-df_train <- df_tmp[ idx_train,] |> select(target_variable, subset)
-df_train <- df_train[1:(10^5), ]
-df_test  <- df_tmp[-idx_train,] |> select(target_variable, subset)
+# df_train <- df_tmp[ idx_train,] |> select(target_variable, subset)
+# df_test  <- df_tmp[-idx_train,] |> select(target_variable, subset)
 
-# df_train <- df_tmp[ idx_train,]
-# df_test  <- df_tmp[-idx_train,]
+df_train <- df_tmp[ idx_train,]
+df_test  <- df_tmp[-idx_train,]
 ```
 
 
 # Run Model
 ```{r}
-library(parallel)
-library(doParallel)
+do_parallel <- F
+
+if (do_parallel) library(parallel)
+if (do_parallel) library(doParallel)
 
 tic()
-# cl <- makePSOCKcluster(9)
-# registerDoParallel(cl)
+if (do_parallel) cl <- makePSOCKcluster(9)
+if (do_parallel) registerDoParallel(cl)
 
 mod <- train(
-  ba_change_abs_yr ~ ., 
+  ba_change_abs_yr ~ .,
   data = df_train,
-  method = "ranger",
-  na.action = na.pass
+  method = "rf",
+  na.action = na.pass,
+  
+  trControl = trainControl(method = "cv", number = 5, savePredictions = "final"),
+  tuneGrid = expand.grid( .mtry = floor(sqrt(ncol(df_train)))
+                          ),
+  
+  metric = "RMSE",
+  replace = FALSE,
+  sample.fraction = 0.5,
+  num.trees = 1000,          # high number ok since no hperparam tuning
+  seed = 2023                # for reproducibility
 )
 
-# stopCluster(cl)
+if (do_parallel) stopCluster(cl)
 toc()
 beep()
 ```
@@ -138,4 +153,67 @@ beep()
 
 # Model Evaluation
 
+```{r}
+# Need to load {ranger} because ranger-object is used in predict()
+library(ranger) 
+
+# Make predictions for validation sites
+prediction <- 
+  predict(mod,              # RF model
+          newdata = df_test,   # Predictor data
+          num.threads = parallel::detectCores() - 1)
+
+# Save predictions to validation df
+df_test$pred <- prediction |> as.vector()
+```
+
+```{r}
+# Calculate error
+err <- df_test[target_variable] - df_test$pred
+
+# Calculate bias
+bias <- mean(err, na.rm = T) |> round(2)
+
+# Calculate RMSE
+rmse <- sqrt(mean(err, na.rm = T)) |> round(2)
+
+# Calculate R2
+r2 <- cor(df_test[target_variable], df_test$pred, method = "pearson")^2 |> round(2)
+```
+
+```{r}
+max_y <- max(
+  c(df_test$pred, 
+    df_test |> pull(get(target_variable))
+    ))
+
+df_test |> 
+  ggplot(aes(x = pred, y = get(target_variable))) +
+  geom_point() +
+  geom_smooth(method = "lm",
+                       color = "tomato") +
+  # Add layout
+  theme_classic() +
+  geom_abline(
+    intercept = 0, 
+    slope = 1, 
+    linetype = "dotted") +
+  ylim(0, max_y) +
+  xlim(0, max_y) +
+  labs(
+    title = paste0("Observed vs. Predicted for: ", target_variable),
+    # subtitle = paste0("Bias = ", bias, ", RMSE = ", rmse, ", R^2 = ", r2),
+    subtitle = bquote(paste("Bias = ", .(bias), 
+                            ", RMSE = ", .(rmse), 
+                            ", R"^2, " = ", .(r2))),
+    x = "Predicted",
+    y = "Observed"
+  )
+```
+
+
 # Model Interpretation
+```{r}
+
+```
+
