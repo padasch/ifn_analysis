@@ -10,3 +10,4 @@ analysis/render/*
 analysis/.quarto/*
 figures
 qgis-project
+R/_backgroundjobs.R
