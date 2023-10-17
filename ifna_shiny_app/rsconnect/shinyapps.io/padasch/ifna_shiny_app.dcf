@@ -1,0 +1,10 @@
+name: ifna_shiny_app
+title:
+username: padasch
+account: padasch
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 10118569
+bundleId: 7777177
+url: https://padasch.shinyapps.io/ifna_shiny_app/
+version: 1
