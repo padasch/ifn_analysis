@@ -16,7 +16,7 @@ my_data <- readRDS("data/tmp/final_dataset_for_analysis.rds")
 # Set fixed input ----
 # Input options
 my_species_list <- c(
-  "All Species",
+  # "All Species",
   "Quercus",
   "Pinus",
   "Fagus",
@@ -29,7 +29,19 @@ my_species_list <- c(
   "Betula"
 )
 
-my_polygons_list <- seq(15, 60, 15)
+all_polys <- c(10, 15, 20, 25)
+all_maptypes <- c("dep", "reg", "ser", "gre", "hex")
+all_metrics <-
+  c("n_mor_yr",
+    "n_mor_yr_esq",
+    "ba_growth_abs",
+    "ba_growth_rate",
+    "ba_loss_abs",
+    "ba_loss_rate")
+
+all_files <- 
+  readRDS(here("data/tmp/20231017-140959_path_to_maps.rds")) |> 
+  str_replace("/Users/pascal/repos/padasch/ifn_analysis", here())
 
 # Create static dfs ----
 # ______________________________________________________________________________
@@ -88,6 +100,18 @@ df_temp_age <-
 # UI ----
 ui <- fluidPage(
   titlePanel("French NFI Data"),
+  
+  # Add tags to make embedded images adaptable to screen size
+  tags$head(tags$style(
+    type="text/css",
+    "#hexmap img {max-width: 100%; width: 100%; height: auto}"
+  )),
+  tags$head(tags$style(
+    type="text/css",
+    "#temp_species img {max-width: 100%; width: 100%; height: auto}"
+  )),
+  
+  # Tabs
   tabsetPanel(
     ## Tab: Spatial Trends ----
     tabPanel("Spatial Trends",
@@ -101,31 +125,28 @@ ui <- fluidPage(
                    selected = unique(my_species_list)[1]
                  ),
                  selectInput(
-                   "polygons",
-                   "Select Number of POLYGONS per º of lat/lon:",
-                   choices = unique(my_polygons_list),
-                   selected = unique(my_polygons_list)[1]
+                   "metric",
+                   "Select METRIC of change:",
+                   choices = unique(all_metrics),
+                   selected = unique(all_metrics)[1]
                  ),
-                 numericInput("text_size",
-                              "Change TEXT size:",
-                              value = 14)
+                 selectInput(
+                   "maptype",
+                   "Select MAP type:",
+                   choices = unique(all_maptypes),
+                   selected = unique(all_maptypes)[1]
+                 ),
+                 selectInput(
+                   "polygons",
+                   "Select POLYGON size for hexmap",
+                   choices = unique(all_polys),
+                   selected = unique(all_polys)[1]
+                 )
                ),
                mainPanel(
                  h1("Spatial Trends"),
-                 h2("Mortality"),
-                 h4("%-stem based mortality (Hoshino et al. 2002)"),
-                 plotOutput("hexmap1", height = 750),
-                 h4("%-stem based mortality (Esquivel et al. 2020)"),
-                 plotOutput("hexmap2", height = 750),
-                 h4("Absolute loss of basal area"),
-                 plotOutput("hexmap3", height = 750),
-                 h4("Relative loss of basal area"),
-                 plotOutput("hexmap4", height = 750),
-                 h2("Growth"),
-                 h4("Absolute Growth"),
-                 plotOutput("hexmap5", height = 750),
-                 h4("Relative Growth"),
-                 plotOutput("hexmap6", height = 750)
+                 plotOutput("hexmap", height = "auto"),
+                 textOutput("hexmap_link")
                )
              )),
     ## Tab: Temporal Trends ----
@@ -137,7 +158,7 @@ ui <- fluidPage(
         ),
         mainPanel(
           h1("Temporal Trends"),
-          plotOutput("temp_species", height = 500),
+          plotOutput("temp_species"),
           h1(""),
           plotOutput("temp_height", height = 500),
           h1(""),
@@ -180,12 +201,12 @@ ui <- fluidPage(
                  numericInput("xlim_min",
                               "Enter LOWER limit of y-axis:",
                               value = -5)
-                 # ,
-                 # numericInput(
-                 #   "text_size",
-                 #   "Change plot TEXT size:",
-                 #   value = 10
-                 # )
+                 ,
+                 numericInput(
+                   "text_size",
+                   "Change plot TEXT size:",
+                   value = 10
+                 )
                ),
                
                mainPanel(
@@ -220,67 +241,44 @@ server <- function(input, output) {
   # Tab: Spatial Trends ----
   # ______________________________________________________________________________
   
-  # Get filename 
+  # Get filename
   my_filename <- reactive({
-    tmp_species  <- input$species
-    tmp_polygons <- input$polygons
     
-    if (input$species == "All Species") {
-      my_filename <-
-        paste0(
-          here("data/tmp/"),
-          "hexmap_data-",
-          "all_species", "-",
-          tmp_polygons, "polygons_per_degree-",
-          5, "min_ntrees_per_polygon",
-          ".rds"
-        )
-      
+    species  <- input$species
+    polygons <- input$polygons
+    metric   <- input$metric
+    maptype  <- input$maptype
+    
+    if (maptype == "hex") {
+      my_file <- paste0(
+        species, "-hex_",
+        polygons, "-",
+        metric,
+        ".jpg"
+      )
     } else {
-      my_filename <-
-        paste0(
-          here("data/tmp/"),
-          "hexmap_data-",
-          tmp_species, "-",
-          tmp_polygons, "polygons_per_degree-",
-          5, "min_ntrees_per_polygon",
-          ".rds"
-        )
+      
+      my_file <- paste0(
+        species, "-",
+        maptype, "-",
+        metric,
+        ".jpg"
+      )
     }
     
-    
-    my_filename
-  })
-  
-  # Get data 
-  my_df <- reactive({
-    readRDS(my_filename())
+    my_file <- all_files[grep(my_file, all_files)]
+    my_file
   })
   
   # Render plots
-  output$hexmap1 <-
-    renderPlot({
-      create_hexmap_from_aggregated_data("n_mor_yr", my_df(), "return", input$species) + my_size()
-    })
-  output$hexmap2 <-
-    renderPlot({
-      create_hexmap_from_aggregated_data("n_mor_yr_esq", my_df(), "return", input$species) + my_size()
-    })
-  output$hexmap3 <-
-    renderPlot({
-      create_hexmap_from_aggregated_data("ba_loss_abs", my_df(), "return", input$species) + my_size()
-    })
-  output$hexmap4 <-
-    renderPlot({
-      create_hexmap_from_aggregated_data("ba_loss_rate", my_df(), "return", input$species) + my_size()
-    })
-  output$hexmap5 <-
-    renderPlot({
-      create_hexmap_from_aggregated_data("ba_growth_abs", my_df(), "return", input$species) + my_size()
-    })
-  output$hexmap6 <-
-    renderPlot({
-      create_hexmap_from_aggregated_data("ba_growth_rate", my_df(), "return", input$species) + my_size()
+  output$hexmap <-
+    renderImage({
+      list(src = paste0(my_filename()))
+    }, deleteFile = FALSE)
+  
+  output$hexmap_link <-
+    renderText({
+      paste(my_filename())
     })
   
   # Tab: Temporal Trends ----
