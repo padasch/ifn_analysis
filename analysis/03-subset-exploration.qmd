@@ -852,26 +852,11 @@ nfi_dataset_for_analysis <-
 ### Save RDS
 ```{r}
 load_or_save_latest_file(nfi_dataset_for_analysis, "save")
-load_or_save_latest_file(nfi_dataset_for_analysis, "load")
-df <- nfi_dataset_for_analysis
 ```
 
-
+# --- Remove below
 # Hexmaps 
 ## Get species subset
-
-```{r}
-all_species <- get_most_common_species(df, "genus")
-df_tmp <- df |> filter(genus_lat == "Quercus")
-df_plot <- calculate_growth_mortality_per_area(df_species  = df_tmp, region_type = "se")
-create_hexmap_from_aggregated_data(
-  selected_var = "ba_loss_rate",
-  df_plot  = df_plot,
-  return_or_save = "return",
-  selected_species = "Populus"
-  )
-```
-
 
 ```{r}
 # # Subset for given species
