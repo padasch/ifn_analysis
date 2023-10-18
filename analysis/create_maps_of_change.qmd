@@ -8,16 +8,100 @@ editor_options:
 source(here::here("R/_setup.R"))
 
 # Create today's figure directory
-# dir_tmp <- get_todays_file_directory("figures")
+dir_tmp <- get_todays_file_directory("figures")
 ```
 
 ```{r}
 load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+df <- nfi_dataset_for_analysis
 ```
 
 ```{r}
-create_hexmap_from_aggregated_data(
-  
-)
+all_species <- get_most_common_species(df , "genus") |> head(10)
+all_maptypes <- c("dep", "reg", "ser", "gre")
+all_polys   <- c(10, 15, 20, 25)
+all_metrics <-
+  c("n_mor_yr",
+    "n_mor_yr_esq",
+    "ba_growth_abs",
+    "ba_growth_rate",
+    "ba_loss_abs",
+    "ba_loss_rate")
+
+all_files <- list()
 ```
 
+```{r}
+# For maps that are not hexagons
+for (my_species in all_species$genus_lat) {
+  for (my_maptype in all_maptypes) {
+    df_tmp  <- df |> filter(genus_lat == my_species)
+    df_plot <- calculate_growth_mortality_per_area(df_species  = df_tmp, region_type = my_maptype)
+    
+    for (my_metric in all_metrics) {
+      
+      my_p <- create_hexmap_from_aggregated_data(
+        selected_var = my_metric,
+        df_plot  = df_plot,
+        return_or_save = "return",
+        selected_species = my_species
+        )
+      
+      my_file <- paste0(
+        dir_tmp, "/", 
+        my_species, "-",
+        my_maptype, "-",
+        my_metric,
+        ".jpg"
+      )
+      
+      all_files <- append(all_files, my_file)
+      
+      ggsave(
+        my_file,
+        my_p
+      )
+      
+    }
+    
+  }
+}
+
+# For hexmaps
+for (my_species in all_species$genus_lat) {
+  for (my_poly in all_polys) {
+    df_tmp  <- df |> filter(genus_lat == my_species)
+    df_plot <- calculate_growth_mortality_per_area(df_species  = df_tmp, region_type = "hex", n_poly = my_poly)
+    
+    for (my_metric in all_metrics) {
+      
+      my_p <- create_hexmap_from_aggregated_data(
+        selected_var = my_metric,
+        df_plot  = df_plot,
+        return_or_save = "return",
+        selected_species = my_species
+        )
+      
+      my_file <- paste0(
+        dir_tmp, "/", 
+        my_species, "-hex_",
+        my_poly, "-",
+        my_metric,
+        ".jpg"
+      )
+      
+      all_files <- append(all_files, my_file)
+      
+      ggsave(
+        my_file,
+        my_p
+      )
+      
+    }
+    
+  }
+}
+
+path_to_maps <- all_files |> unlist()
+load_or_save_latest_file(path_to_maps, "save")
+```
