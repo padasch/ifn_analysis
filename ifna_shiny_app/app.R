@@ -1,3 +1,5 @@
+# To deploy, do: rsconnect::deployApp()
+
 # Load Packages ----
 # ______________________________________________________________________________
 
@@ -122,31 +124,30 @@ ui <- fluidPage(
                    "species",
                    "Select SPECIES (at the genus level):",
                    choices = unique(my_species_list),
-                   selected = unique(my_species_list)[1]
+                   selected = "Quercus"
                  ),
                  selectInput(
                    "metric",
                    "Select METRIC of change:",
                    choices = unique(all_metrics),
-                   selected = unique(all_metrics)[1]
+                   selected = "ba_loss_rate"
                  ),
                  selectInput(
                    "maptype",
                    "Select MAP type:",
                    choices = unique(all_maptypes),
-                   selected = unique(all_maptypes)[1]
+                   selected = "ser"
                  ),
                  selectInput(
                    "polygons",
                    "Select POLYGON size for hexmap",
                    choices = unique(all_polys),
-                   selected = unique(all_polys)[1]
+                   selected = 15
                  )
                ),
                mainPanel(
                  h1("Spatial Trends"),
-                 plotOutput("hexmap", height = "auto"),
-                 textOutput("hexmap_link")
+                 plotOutput("hexmap", height = "auto")
                )
              )),
     ## Tab: Temporal Trends ----
@@ -275,11 +276,6 @@ server <- function(input, output) {
     renderImage({
       list(src = paste0(my_filename()))
     }, deleteFile = FALSE)
-  
-  output$hexmap_link <-
-    renderText({
-      paste(my_filename())
-    })
   
   # Tab: Temporal Trends ----
   # ______________________________________________________________________________
