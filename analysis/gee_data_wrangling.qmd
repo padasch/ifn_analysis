@@ -4,25 +4,25 @@ editor_options:
   chunk_output_type: console
 ---
 
+## Setup
 ```{r}
 source(here::here("R/_setup.R"))
-```
-
-# Wrangle Google Earth Engine Data
-## Load data
-```{r}
-load_or_save_latest_file(rgee_filenames, "load")
 load_or_save_latest_file(nfi_dataset_for_analysis, "load")
-```
-
-```{r}
-dir_rgee <- here("data/raw/gee/")
 df       <- nfi_dataset_for_analysis
-# df_xy    <- df |> ungroup() |> select(lat, lon) |> distinct() |> mutate(site_name = row_number()) |> 
+
+dir_rgee <- here("data/raw/gee/")
 df_xy    <- df |> ungroup() |> select(lon, lat) |> distinct() |> rename(y = lat, x = lon)
 df_years <- df |> select(campagne_1, campagne_2) |> flatten() |> unlist() |> unique() |> sort()
 ```
 
+
+## ERA5
+### Load data
+```{r}
+load_or_save_latest_file(rgee_filenames, "load")
+```
+
+### Stack together
 ```{r}
 all_rasters <- stack()
 all_data    <- tibble()
@@ -78,16 +78,18 @@ for (my_year in df_years) {
 ```
 
 ```{r}
-df_preds <- 
-  nfi_dataset_for_analysis |> 
-  left_join(
-    all_data |> rename(lat = y, lon = x),
-    by = join_by(lon, lat, campagne_1)
-    )
+era5_predictor_dataset <- all_data |> rename(lat = y, lon = x)
+load_or_save_latest_file(era5_predictor_dataset, "save")
 
-vars_era5 <- get_era5_vars()
-
-df_tmp <- df_preds |> select(contains(vars_era5), ba_change_abs_yr, lat, lon)
-
+# df_preds <- 
+#   nfi_dataset_for_analysis |> 
+#   left_join(
+#     all_data |> rename(lat = y, lon = x),
+#     by = join_by(lon, lat, campagne_1)
+#     )
+# 
+# vars_era5 <- get_era5_vars()
+# 
+# df_tmp <- df_preds |> select(contains(vars_era5), ba_change_abs_yr, lat, lon)
 ```
 
