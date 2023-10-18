@@ -79,7 +79,7 @@ get_shapefile_france <- function(which_region = NA, n_poly = 15) {
     
     # Load data
     sf_france <-
-      sf::read_sf("data/raw/maps/France_shapefile/greco/France_ser_.shp") |> 
+      sf::read_sf(here("data/raw/maps/France_shapefile/greco/France_ser_.shp")) |> 
       # sf::st_transform("WGS84") |> 
       st_transform(crs = 2192) |>
       rename(ser_num  = ser,
