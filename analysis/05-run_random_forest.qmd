@@ -12,114 +12,207 @@ source(here::here("R/_setup.R"))
 # dir_tmp <- get_todays_file_directory("figures")
 ```
 
-# Load Data
+## Load Data
 ```{r}
 load_or_save_latest_file(nfi_dataset_for_analysis, "load")
-df <- nfi_dataset_for_analysis
+load_or_save_latest_file(era5_predictor_dataset, "load")
 ```
 
-# Data Inspection
-## Remove unnecessary variables
-
+## Global Vars
 ```{r}
-vec_missing_perc <- colMeans(is.na(df)) * 100
+# Inputs
+my_species        <- "Quercus"
+my_target         <- "ba_loss_rate"
+na_perc_threshold <- 5
+
+# Variables
+all_targets <- 
+  c(
+    # "n_mor_yr",
+    # "n_mor_yr_esq",
+    "ba_growth_abs",
+    "ba_growth_rate",
+    "ba_loss_abs",
+    "ba_loss_rate"
+  )
+  # c(
+  #   "c13_change_abs_yr",
+  #   "c13_change_perc_yr",
+  #   "dbh_change_abs_yr",
+  #   "dbh_change_perc_yr",
+  #   "ba_change_abs_yr",
+  #   "ba_change_perc_yr"
+  #   )
+
+drop_targets <- all_targets[all_targets != my_target]
+```
+
+# Create Dataset
+## Filter for species
+```{r}
+df_tmp     <- nfi_dataset_for_analysis
+df_species <- df_tmp |> filter(genus_lat == my_species)
+```
+
+## Aggregate NFI
+```{r}
+# To calculate growth and mortality, we need to aggregate the NFI data on any given level
+message("> Aggregating data takes time...")
+tic()
+df_aggregated <- 
+  df_species |> 
+  select(idp, ba_1, ba_2, tree_state_1, tree_state_2, tree_state_change) |> 
+  group_by(idp) |> 
+  nest() |> 
+  calculate_growth_mortality() |>
+  ungroup()
+toc()
+beep(2)
+```
+
+## Filter
+```{r}
+# Filter out all plots that showed no growth and no mortality
+df_aggregated <- df_aggregated |> filter(ba_loss_abs != 0)
+```
+
+
+## Merge
+```{r}
+df_tmp <- df_aggregated
+
+# Attach plot-level information
+df_tmp <- 
+  df_tmp |> 
+  select(-data) |> 
+  left_join(df_species |>
+              select(contains(c(
+                get_vars("placette"),
+                "lat", "lon", "census"
+              ))) |>
+              distinct(),
+            by = join_by(idp))
+
+# Merge with predictor dataset
+df_tmp <- 
+  left_join(
+    df_tmp, 
+    era5_predictor_dataset ,
+    by = join_by("lat", "lon", "campagne_1")
+  )
+
+# Turn all character variables into factors
+character_vars <- 
+  df_tmp |> 
+  select_if(is.character) |> 
+  names()
+message("> Character variables in the dataset turned into factors:",paste0(character_vars, sep = "\n"))
+for (var in character_vars) {df_tmp[[var]] <- as.factor(df_tmp[[var]])}
+
+df_merged <- df_tmp
+```
+
+## Drop useless variables
+```{r}
+# Drop vars by hand that are of no use for the model
+useless_vars <- 
+  c(
+    "tree_id",
+    "visit_1",
+    "visit_2",
+    "campagne_1",
+    "campagne_2",
+    "a",
+    "idp",
+    "simplif",
+    "w",
+    "v",
+    "veget",
+    "espar",
+    "veget5",
+    "utip_1",
+    "utip_2",
+    "autut_1",
+    "autut_2",
+    "uta1",
+    "uta2",
+    "csa_1",
+    "csa_2"
+  )
+
+df_drop_uselees <- df_merged |> select(-any_of(useless_vars))
+```
+
+## Drop factors
+```{r}
+df_tmp <- df_drop_uselees
+
+factor_levels_list <- sapply(df_tmp, function(x) length(levels(factor(x)))) # Get n factor lvls
+factor_levels_list <- factor_levels_list[sapply(df_tmp, is.factor)]         # Remove non-factors
+result <- tibble(var = names(factor_levels_list), n_levels = factor_levels_list) # Make tibble
+vars_less_two_levels <- result |> filter(n_levels < 2) |> pull(var) # Extract vars
+df_drop_factors <- df_tmp |> select(-any_of(vars_less_two_levels))  # Drop vars
+```
+
+## Drop NAs
+```{r}
+df_tmp <- df_drop_factors
+
+vec_missing_perc <- colMeans(is.na(df_tmp)) * 100
 df_missing_perc  <- 
   tibble(
     var = names(vec_missing_perc),
     val = vec_missing_perc
     ) |> 
-  arrange(val)
-  
-vars_less_20perc_na <- df_missing_perc |> filter(val < 5) |> pull(var)
+  arrange(desc(val))
 
-df_tmp <- df |> select(any_of(vars_less_20perc_na))
+df_missing_perc |> print(n = 100)
+vars_above_threshold <- df_missing_perc |> filter(val > na_perc_threshold) |> pull(var)
+df_drop_na <- df_tmp |> select(-any_of(vars_above_threshold))
 ```
 
+## Drop other targets
 ```{r}
-vars_notneeded <- 
-  c("
-    ")
+df_tmp <- df_drop_na
+df_drop_targets <- df_tmp |> select(-any_of(drop_targets))
 ```
 
-
-## Missing Data
+# Data Inspection
+## Data Missingness
 ```{r, eval=FALSE}
-visdat::vis_miss(
-  nfi_dataset_for_analysis |> 
-    select(1:10) |> 
-    slice_sample(n = 20)
-  )
-```
+df_tmp <- df_drop_targets
 
-# Data Pre-Processing
-```{r}
-target_variable <- "ba_change_abs_yr"
-
-# TODO SHOULD BE PART OF DATA CLEANING AND NOT MODELLING!
-character_vars <- 
-  df_tmp |> 
-  select_if(is.character) |> 
-  names()
-
-# Turn all character variables into factor variables
-for (var in character_vars) {
-  df_tmp[[var]] <- as.factor(df_tmp[[var]])
-}
-
-df_tmp <- 
-  df_tmp |> 
-  
-  # Remove factor variables with only one level
-  select_if(~ !(is.factor(.) && length(levels(.)) == 1)) |> 
-  
-  # Remove columns that hold only NA
-  select_if(~ !all(is.na(.)))
-
-# SHORTCUT ERA5 TEST
-df_tmp <- df_tmp |> drop_na()
+visdat::vis_miss(df_tmp |> slice_sample(n = 10000),
+                 sort_miss = TRUE)
 ```
 
 # Data Splitting
 ```{r}
-set.seed(2023)
-df_tmp <- df_tmp |> slice_sample(n = 200000)
+df_tmp <- df_drop_targets
 
+# Drop NA (solution for later: impute data)
+df_tmp <- df_tmp |> drop_na()
+
+# Create split
+set.seed(2023)
 idx_train <- 
   createDataPartition(
-    df_tmp[[target_variable]],
+    df_tmp[[my_target]],
     p = .8, 
     list = FALSE, 
     times = 1
     )
 
-# TODO: DEBUG Select subset of predictors
-
-# Selection by hand
-# subset <- 
-#   df_tmp |> 
-#   select(
-#     
-#   ) |> 
-#   names()
-# 
-# # Numerics only
-# subset <- df_tmp |> select_if(is.numeric) |> names()
-
-# Random number
-# n_preds <- 10
-# subset <- sample(1:ncol(df_tmp), n_preds, replace = TRUE)
-
-# df_train <- df_tmp[ idx_train,] |> select(target_variable, subset)
-# df_test  <- df_tmp[-idx_train,] |> select(target_variable, subset)
-
 df_train <- df_tmp[ idx_train,]
 df_test  <- df_tmp[-idx_train,]
-```
 
+# Define formula
+my_formula <- as.formula(paste(my_target, "~ ."))
+```
 
 # Run Model
 ```{r}
-do_parallel <- F
+do_parallel <- FALSE
 
 if (do_parallel) library(parallel)
 if (do_parallel) library(doParallel)
@@ -128,21 +221,18 @@ tic()
 if (do_parallel) cl <- makePSOCKcluster(9)
 if (do_parallel) registerDoParallel(cl)
 
-mod <- train(
-  ba_change_abs_yr ~ .,
+rf_model <- train(
+  my_formula,
   data = df_train,
   method = "rf",
   na.action = na.pass,
-  
   trControl = trainControl(method = "cv", number = 5, savePredictions = "final"),
-  tuneGrid = expand.grid( .mtry = floor(sqrt(ncol(df_train)))
-                          ),
-  
+  tuneGrid = expand.grid(.mtry = floor(sqrt(ncol(df_train)))),
   metric = "RMSE",
   replace = FALSE,
   sample.fraction = 0.5,
-  num.trees = 1000,          # high number ok since no hperparam tuning
-  seed = 2023                # for reproducibility
+  num.trees = 200,
+  seed = 2023
 )
 
 if (do_parallel) stopCluster(cl)
@@ -150,16 +240,14 @@ toc()
 beep()
 ```
 
-
 # Model Evaluation
-
 ```{r}
 # Need to load {ranger} because ranger-object is used in predict()
 library(ranger) 
 
 # Make predictions for validation sites
 prediction <- 
-  predict(mod,              # RF model
+  predict(rf_model,              # RF model
           newdata = df_test,   # Predictor data
           num.threads = parallel::detectCores() - 1)
 
@@ -169,26 +257,34 @@ df_test$pred <- prediction |> as.vector()
 
 ```{r}
 # Calculate error
-err <- df_test[target_variable] - df_test$pred
+err <- df_test[[my_target]] - df_test$pred
 
 # Calculate bias
-bias <- mean(err, na.rm = T) |> round(2)
+bias <- mean(err, na.rm = T)
 
 # Calculate RMSE
-rmse <- sqrt(mean(err, na.rm = T)) |> round(2)
+rmse <- sqrt(mean(err^2, na.rm = T))
 
 # Calculate R2
-r2 <- cor(df_test[target_variable], df_test$pred, method = "pearson")^2 |> round(2)
+r2 <- cor(df_test[[my_target]], df_test$pred, method = "pearson")^2 |> round(2)
 ```
 
 ```{r}
 max_y <- max(
   c(df_test$pred, 
-    df_test |> pull(get(target_variable))
+    df_test |> pull(get(my_target))
     ))
 
-df_test |> 
-  ggplot(aes(x = pred, y = get(target_variable))) +
+my_caption <- 
+  paste0(
+    "Species: ", my_species, " | ",
+    "Metric: ", my_target, " | ",
+    "NA Threshold: ", na_perc_threshold, "%"
+  )
+
+p_modobs <- 
+  df_test |> 
+  ggplot(aes(x = pred, y = get(my_target))) +
   geom_point() +
   geom_smooth(method = "lm",
                        color = "tomato") +
@@ -201,19 +297,120 @@ df_test |>
   ylim(0, max_y) +
   xlim(0, max_y) +
   labs(
-    title = paste0("Observed vs. Predicted for: ", target_variable),
-    # subtitle = paste0("Bias = ", bias, ", RMSE = ", rmse, ", R^2 = ", r2),
+    title = paste0("Observed vs. Predicted for: ", my_target),
     subtitle = bquote(paste("Bias = ", .(bias), 
                             ", RMSE = ", .(rmse), 
                             ", R"^2, " = ", .(r2))),
+    caption = my_caption,
     x = "Predicted",
     y = "Observed"
+  ) +
+  theme(
+    plot.caption = element_text(hjust = 0)
   )
 ```
 
-
 # Model Interpretation
 ```{r}
+do_parallel <- FALSE
 
+if (do_parallel) library(parallel)
+if (do_parallel) library(doParallel)
+
+tic()
+if (do_parallel) cl <- makePSOCKcluster(9)
+if (do_parallel) registerDoParallel(cl)
+if (do_parallel) stopCluster(cl)
+
+p_vip <- 
+  vip::vip(
+    rf_model,                      # Model to use
+    train = rf_model$trainingData,      # Training data used in the model
+    method = "permute",            # VIP method
+    target = ".outcome",           # Target variable
+    nsim = 5,                      # Number of simulations
+    metric = "RMSE",               # Metric to assess quantify permutation
+    sample_frac = 0.5,            # Fraction of training data to use
+    pred_wrapper = predict,         # Prediction function to use
+    geom = "violin",
+    num_features = 20,
+    parallel = do_parallel
+    )
+
+toc()
+beep()
+```
+
+```{r}
+all_models <- list()
+my_modelname <- paste0("RF-", my_species, "-", my_target, "-", na_perc_threshold, "_percNAthreshold")
+all_models[[my_modelname]] <- list(name = my_modelname,
+                                   rf_model = rf_model, 
+                                   modobs = p_modobs, 
+                                   vip = p_vip
+                                   )
+
+all_models[[my_modelname]]
+```
+
+
+# -- NEW 
+```{r}
+library(caret)
+library(randomForest)
+library(ggplot2)
+
+run_rf <- function(data, species = NULL, height_class = NULL) {
+  
+  # ______________________________________________________________________________
+  # Data Cleaning ----
+  
+  # Filter data based on species, if specified
+  if (!is.null(species)) {
+    data <- data[data$Species == species, ]
+  }
+
+  # Filter data based on height class, if specified
+  if (!is.null(height_class)) {
+    data <- data[data$HeightClass == height_class, ]
+  }
+
+  # Split the data into training and testing sets
+  set.seed(123)
+  index <- createDataPartition(data$BasalAreaChange, p = 0.8, list = FALSE)
+  train_data <- data[index, ]
+  test_data <- data[-index, ]
+
+  # Specify the control parameters for cross-validation
+  ctrl <- trainControl(method = "cv", number = 5)
+
+  # Train Random Forest models with hyperparameter tuning
+  rf_model <- train(
+    BasalAreaChange ~ .,
+    data = train_data,
+    method = "rf",
+    trControl = ctrl,
+    tuneLength = 5  # Adjust as needed
+  )
+
+  # Make predictions on the test set
+  predictions <- predict(rf_model, newdata = test_data)
+
+  # Create a ggplot for comparing observations against predictions
+  plot_data <- data.frame(Observations = test_data$BasalAreaChange, Predictions = predictions)
+  ggplot(plot_data, aes(x = Observations, y = Predictions)) +
+    geom_point() +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+    labs(title = "Observations vs Predictions",
+         x = "Observed Basal Area Change",
+         y = "Predicted Basal Area Change")
+
+  # Return the trained model and the ggplot
+  return(list(model = rf_model, plot = last_plot()))
+}
+```
+
+```{r}
+run_rf
 ```
 
