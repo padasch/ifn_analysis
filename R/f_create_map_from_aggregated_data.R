@@ -68,8 +68,8 @@ create_hexmap_from_aggregated_data <- function(
   if (selected_var == "ba_loss_abs") {
     legend_txt <- expression(paste("\nTree Mortality [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
     breaks     <- c(-Inf, 1, 2, 3, 4, 5, Inf)
-    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
-                    paste0("≥", breaks[(length(breaks) - 1)], "%"))
+    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)]),
+                    paste0("≥", breaks[(length(breaks) - 1)]))
     palette_txt <- "Reds"
     caption_txt <- "\nMortality = [BA of trees that died between census] / 5"
     my_title <- paste0("Mortality of ", selected_species, "\n")
@@ -89,8 +89,8 @@ create_hexmap_from_aggregated_data <- function(
   if (selected_var == "ba_growth_abs") {
     legend_txt <- expression(paste("\nTree Growth [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
     breaks     <- c(-Inf, 5, 10, 15, 20, 25, Inf)
-    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
-                    paste0("≥", breaks[(length(breaks) - 1)], "%"))
+    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)]),
+                    paste0("≥", breaks[(length(breaks) - 1)]))
     palette_txt <- "Greens"
     caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / 5"
     my_title <- paste0("Growth of ", selected_species, "\n")
@@ -108,13 +108,16 @@ create_hexmap_from_aggregated_data <- function(
   
   # Turn variable into classes ----
   df_plot <-
-    df_plot |> 
-    mutate(clss = 
-             cut(get(selected_var), 
-                 breaks = breaks, 
-                 labels = breaks_txt, 
+    df_plot |>
+    mutate(clss =
+             cut(get(selected_var),
+                 breaks = breaks,
+                 labels = breaks_txt,
                  include.lowest = TRUE)
     )
+  
+  # DEBUG to overwrite classes and keep numerical values!
+  df_plot <- df_plot |> mutate(clss = get(selected_var))
   
   # Set custom theme ----
   my_theme <-
@@ -130,6 +133,7 @@ create_hexmap_from_aggregated_data <- function(
       legend.position = "bottom",
       legend.title = element_text(
         hjust = 0.5,
+        vjust = 0.75,
         color = "black",
         face = "bold"
       ),
@@ -140,21 +144,36 @@ create_hexmap_from_aggregated_data <- function(
     )
   
   # Make plot ----
-  p <- 
-    df_plot |> drop_na(grouping_region) |> 
+  p <-
+    df_plot |> 
+    drop_na(grouping_region) |> 
     ggplot(aes(fill = clss, color = clss)) +
     geom_sf(lwd = 0.1) +
     facet_wrap(~census_interval, nrow = 2) +
-    scale_fill_brewer(
+    scale_fill_distiller(
+      direction = 1,
+      guide = "colourbar",
       palette   = palette_txt,
       na.value = "grey80",
       name = legend_txt
     ) +
-    scale_color_brewer(
+    scale_color_distiller(
+      direction = 1,
+      guide = "colourbar",
       palette   = palette_txt,
       na.value = "grey80",
       name = legend_txt
     ) +
+    # scale_fill_brewer(
+    #   palette   = palette_txt,
+    #   na.value = "grey80",
+    #   name = legend_txt
+    # ) +
+    # scale_color_brewer(
+    #   palette   = palette_txt,
+    #   na.value = "grey80",
+    #   name = legend_txt
+    # ) +
     # scale_fill_viridis_d(
     #   option   = "A",
     #   na.value = "grey90",
@@ -165,7 +184,8 @@ create_hexmap_from_aggregated_data <- function(
     #   na.value = "grey90",
     #   name = legend_txt
     #   ) +
-    guides(fill = guide_legend(nrow = 2, title.position = "top")) +
+    # guides(fill   = guide_legend(guide = "colourbar", title.position = "top"),
+           # color  = "none") +
     labs(title = my_title,
          caption = caption_txt) +
     my_theme
