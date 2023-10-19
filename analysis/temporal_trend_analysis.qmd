@@ -5,6 +5,9 @@
 ```{r setup, echo=FALSE}
 source(here::here("R/_setup.R"))
 load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+dir_figs <- get_todays_file_directory("figures")
+dir_figs_shiny <- get_todays_file_directory_shiny("figures")
+dir_rds_shiny <- get_todays_file_directory_shiny("rds")
 ```
 
 # TODO
@@ -19,14 +22,61 @@ load_or_save_latest_file(nfi_dataset_for_analysis, "load")
     that we have on the trees and not subset for plots where there have been only a few trees
     of a given species.
 
-# Site-based Aggregation
+# Functions
+```{r}
+tt_save_and_move_to_shiny <- function(
+    my_tt, my_height = 7, my_width = 10
+    ){
+  
+  all_metrics <- get_ggplot_labs(return_available_vars = TRUE)
+  all_files <- list()
+  my_tt_name <- deparse(substitute(my_tt))
+  
+  for (my_metric in all_metrics) {
+    for (my_plot in c("plot_facet", "plot_allinone")) {
+      
+      my_p <- my_tt[[my_metric]][[my_plot]]
+        
+      my_file <- paste0(
+          dir_tmp, "/",
+          my_tt_name, "-",
+          my_metric, "-",
+          my_plot,
+          ".jpg"
+        )
+      
+       my_file_shiny <- paste0(
+          dir_tmp_shiny, "/",
+          my_tt_name, "-",
+          my_metric, "-",
+          my_plot,
+          ".jpg"
+        )
+      
+      ggsave(my_file,       my_p, height = my_height, width = my_width)
+      ggsave(my_file_shiny, my_p, height = my_height, width = my_width)
+      
+      all_files <- append(all_files, my_file_shiny)
+    }
+    
+  }
+  
+  path_to_plots <- all_files |> unlist()
+  saveRDS(
+    path_to_plots,
+    paste0(dir_rds_shiny, "/path_to_plots_", my_tt_name,".rds")
+    )
+}
+```
+
+# Inputs
 ```{r}
 my_min_trees_per_site <- 3
 my_min_sites_per_year <- 5
 ```
 
-## One Group
-
+# One Group
+## Species
 ```{r}
 tt_species <- 
   get_temporal_trends_for_1_group(
@@ -36,46 +86,11 @@ tt_species <-
     min_trees_per_site = my_min_trees_per_site,
     min_sites_per_year = my_min_sites_per_year
   )
+
+tt_save_and_move_to_shiny(tt_species)
 ```
 
-
-```{r}
-tt_species$ba_growth_abs$plot_allinone
-tt_species$ba_loss_abs$plot_allinone
-tt_species$ba_growth_abs$plot_facet
-tt_species$ba_loss_abs$plot_facet
-```
-
-```{r}
-dir_tmp <- get_todays_file_directory("figures")
-all_metrics <- get_ggplot_labs(return_available_vars = TRUE)
-all_files <- list()
-
-for (my_metric in all_metrics) {
-  for (my_plot in c("plot_facet", "plot_allinone")) {
-    
-    my_p <- tt_species[[my_metric]][[my_plot]]
-      
-    my_file <- paste0(
-        dir_tmp, "/",
-        "tt_species-",
-        my_metric, "-",
-        my_plot,
-        ".jpg"
-      )
-    
-    ggsave(my_file, my_p, height = 7, width = 10)
-    
-    all_files <- append(all_files, my_file)
-  }
-  
-}
-
-path_to_plots_tt_species <- all_files |> unlist()
-load_or_save_latest_file(path_to_plots_tt_species, "save")
-```
-
-
+## Height
 ```{r}
 tt_height <- 
   get_temporal_trends_for_1_group(
@@ -88,55 +103,19 @@ tt_height <-
 load_or_save_latest_file(tt_height, "save")
 ```
 
-```{r}
-tt_height$ba_growth_abs$plot_allinone
-tt_height$ba_loss_rate$plot_allinone
-tt_height$ba_growth_abs$plot_facet
-tt_height$ba_loss_rate$plot_facet
-```
-
-```{r}
-dir_tmp <- get_todays_file_directory("figures")
-all_metrics <- get_ggplot_labs(return_available_vars = TRUE)
-all_files <- list()
-
-for (my_metric in all_metrics) {
-  for (my_plot in c("plot_facet", "plot_allinone")) {
-    
-    my_p <- tt_height[[my_metric]][[my_plot]]
-      
-    my_file <- paste0(
-        dir_tmp, "/",
-        "tt_height-",
-        my_metric, "-",
-        my_plot,
-        ".jpg"
-      )
-    
-    ggsave(my_file, my_p, height = 7, width = 10)
-    
-    all_files <- append(all_files, my_file)
-  }
-  
-}
-
-path_to_plots_tt_height <- all_files |> unlist()
-load_or_save_latest_file(path_to_plots_tt_height, "save")
-```
-
-
-### Sylvoecoregions
+## GRECO
 ```{r}
 tt_gre <- 
   get_temporal_trends_for_1_group(
     df_in              = nfi_dataset_for_analysis,
     name_group_1       = "gre",
-    n_groups_1         = 9,
+    n_groups_1         = 11,
     min_trees_per_site = my_min_trees_per_site,
     min_sites_per_year = my_min_sites_per_year
 )
-```
 
+tt_save_and_move_to_shiny(tt_gre, my_height = 7, my_width = 12)
+```
 
 ## Two Groups
 

@@ -10,10 +10,11 @@ library(ggridges)
 library(sf)
 library(here)
 source("R/f_create_hexmap_from_aggregated_data.R")
+source("R/f_load_or_save_latest_file.R")
 
 # Load data ----
 # ______________________________________________________________________________
-my_data <- readRDS("data/tmp/final_dataset_for_analysis.rds")
+my_data    <- readRDS("data/tmp/final_dataset_for_analysis.rds")
 
 # Set fixed input ----
 # Input options
@@ -41,9 +42,65 @@ all_metrics <-
     "ba_loss_abs",
     "ba_loss_rate")
 
-all_files <- 
+
+paths_to_maps <- 
   readRDS(here("data/tmp/20231017-140959_path_to_maps.rds")) |> 
   str_replace("/Users/pascal/repos/padasch/ifn_analysis", here())
+
+# Temporal Trends
+tt_groups <- c("species", "height", "greco") # TODO: species-height, height-species
+
+tt_paths <- c(
+  readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_gre.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_species.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_height.rds")[1]))
+)
+
+
+# ______________________________________________________________________________
+# Functions ----
+get_filename_for_tt <- function(
+    my_metric,
+    my_group,
+    facet_or_all,
+    tt_paths) {
+  
+  # Which plot
+  if (facet_or_all == "facet") {
+    my_plot <- "plot_facet"
+  }
+  if (facet_or_all == "all") {
+    my_plot <- "plot_allinone"
+  }
+  
+  # HEIGHT
+  if (my_group == "height") {
+    my_group <- "tt_height"
+    tt_paths  <- paths_to_tt_height
+  }
+  
+  # SPECIES
+  if (my_group == "species") {
+    my_group <- "tt_species"
+    tt_paths  <- paths_to_tt_species
+  }
+  
+  # GRECO
+  if (my_group == "greco") {
+    my_group <- "tt_gre"
+    tt_paths  <- paths_to_tt_gre
+  }
+  
+  my_file <- paste0(
+    my_group, "-",
+    my_metric, "-",
+    my_plot,
+    ".jpg"
+  )
+  
+  my_file <- tt_paths[grep(my_file, tt_paths)]
+  my_file
+}
 
 # Create static dfs ----
 # ______________________________________________________________________________
@@ -113,6 +170,16 @@ ui <- fluidPage(
     "#temp_species img {max-width: 100%; width: 100%; height: auto}"
   )),
   
+  # Temporal Trends
+  tags$head(tags$style(
+    type="text/css",
+    "#tt_allinone img {max-width: 100%; width: 100%; height: auto}"
+  )),
+  tags$head(tags$style(
+    type="text/css",
+    "#tt_facet img {max-width: 100%; width: 100%; height: auto}"
+  )),
+  
   # Tabs
   tabsetPanel(
     ## Tab: Spatial Trends ----
@@ -155,15 +222,24 @@ ui <- fluidPage(
       "Temporal Trends",
       sidebarLayout(
         sidebarPanel(
-          markdown("No options available.")
+          selectInput(
+            "tt_group",
+            "Select grouping for temporal trend",
+            choices = tt_groups,
+            selected = tt_groups[1]
+          ),
+          selectInput(
+            "tt_metric",
+            "Select metric of change",
+            choices = all_metrics,
+            selected = "ba_loss_rate"
+          )
         ),
         mainPanel(
-          h1("Temporal Trends"),
-          plotOutput("temp_species"),
-          h1(""),
-          plotOutput("temp_height", height = 500),
-          h1(""),
-          plotOutput("temp_age", height = 500)
+          h1("All Groups"),
+          plotOutput("tt_allinone", height = "auto"),
+          h1("Split by group"),
+          plotOutput("tt_facet", height = "auto")
         )
       )
     ),
@@ -267,7 +343,7 @@ server <- function(input, output) {
       )
     }
     
-    my_file <- all_files[grep(my_file, all_files)]
+    my_file <- paths_to_maps[grep(my_file, paths_to_maps)]
     my_file
   })
   
@@ -279,70 +355,44 @@ server <- function(input, output) {
   
   # Tab: Temporal Trends ----
   # ______________________________________________________________________________
-  output$temp_species <- 
-    renderPlot({
-      df_temp_species |> 
-        ggplot() +
-        aes(
-          x = campagne_1,
-          y = mortality,
-          color = genus_lat
-        ) +
-        geom_line() +
-        geom_point() +
-        scale_color_brewer(palette = "Paired") +
-        ylim(0, 4) +
-        labs(
-          title = "Mortality Trend by Species",
-          y = "Stem-based Mortality [%/yr]",
-          x = "Year of first census",
-          color = "Species") +
-        my_size()
-    })
   
-  output$temp_height <- 
-    renderPlot({
-      df_temp_height |> 
-        ggplot() +
-        aes(
-          x = campagne_1,
-          y = mortality,
-          color = height_class
-        ) +
-        geom_line() +
-        geom_point() +
-        facet_wrap(~genus_lat, nrow = 2) +
-        scale_color_viridis_d(end = 0.7) +
-        ylim(0, 10) +
-        labs(
-          title = "Mortality Trend by Species and Height Class",
-          y = "Stem-based Mortality [%/yr]",
-          x = "Year of first census",
-          color = "Height Class") +
-        my_size()
-    })
+  # ALL IN ONE
+  tt_filename_allinone <- reactive({
+    
+    my_group <- input$tt_group
+    my_metric <- input$tt_metric
+    
+    get_filename_for_tt(
+      my_metric,
+      my_group,
+      "all",
+      tt_paths
+    )
+   
+  })
+  output$tt_allinone <-
+    renderImage({
+      list(src = paste0(tt_filename_allinone()))
+    }, deleteFile = FALSE)
   
-  output$temp_age <- 
-    renderPlot({
-      df_temp_age |> 
-        ggplot() +
-        aes(
-          x = campagne_1,
-          y = mortality,
-          color = age_class
-        ) +
-        geom_line() +
-        geom_point() +
-        facet_wrap(~genus_lat, nrow = 2) +
-        scale_color_viridis_d(end = 0.7) +
-        ylim(0, 4) +
-        labs(
-          title = "Mortality Trend by Species and Age Class",
-          y = "Stem-based Mortality [%/yr]",
-          x = "Year of first census",
-          color = "Age Class") +
-        my_size()
-    })
+  # FACET 
+  tt_filename_facet <- reactive({
+    
+    my_group <- input$tt_group
+    my_metric <- input$tt_metric
+    
+    get_filename_for_tt(
+      my_metric,
+      my_group,
+      "facet",
+      tt_paths
+    )
+  })
+  
+  output$tt_facet <-
+    renderImage({
+      list(src = paste0(tt_filename_facet()))
+    }, deleteFile = FALSE)
   
   # Tab: Data Exploration ----
   # ______________________________________________________________________________
