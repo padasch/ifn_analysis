@@ -1,0 +1,177 @@
+# Temporal Trend Analysis
+
+## Setup
+
+```{r setup, echo=FALSE}
+source(here::here("R/_setup.R"))
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+```
+
+# TODO
+
+-   Loop that every metric is plotted? Would require another nested loop within the first group function
+
+-   Fix lower y label stuff
+
+-   Region-based Analysis
+    The idea of this section is to include a bootstrapping approach to calculate
+    the uncertainty of the data. This comes at the advantage that we are taking together all data
+    that we have on the trees and not subset for plots where there have been only a few trees
+    of a given species.
+
+# Site-based Aggregation
+```{r}
+my_min_trees_per_site <- 3
+my_min_sites_per_year <- 5
+```
+
+## One Group
+
+```{r}
+tt_species <- 
+  get_temporal_trends_for_1_group(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "genus_lat",
+    n_groups_1         = 9,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+  )
+```
+
+
+```{r}
+tt_species$ba_growth_abs$plot_allinone
+tt_species$ba_loss_abs$plot_allinone
+tt_species$ba_growth_abs$plot_facet
+tt_species$ba_loss_abs$plot_facet
+```
+
+```{r}
+dir_tmp <- get_todays_file_directory("figures")
+all_metrics <- get_ggplot_labs(return_available_vars = TRUE)
+all_files <- list()
+
+for (my_metric in all_metrics) {
+  for (my_plot in c("plot_facet", "plot_allinone")) {
+    
+    my_p <- tt_species[[my_metric]][[my_plot]]
+      
+    my_file <- paste0(
+        dir_tmp, "/",
+        "tt_species-",
+        my_metric, "-",
+        my_plot,
+        ".jpg"
+      )
+    
+    ggsave(my_file, my_p, height = 7, width = 10)
+    
+    all_files <- append(all_files, my_file)
+  }
+  
+}
+
+path_to_plots_tt_species <- all_files |> unlist()
+load_or_save_latest_file(path_to_plots_tt_species, "save")
+```
+
+
+```{r}
+tt_height <- 
+  get_temporal_trends_for_1_group(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "height_class",
+    n_groups_1         = 9,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+  )
+load_or_save_latest_file(tt_height, "save")
+```
+
+```{r}
+tt_height$ba_growth_abs$plot_allinone
+tt_height$ba_loss_rate$plot_allinone
+tt_height$ba_growth_abs$plot_facet
+tt_height$ba_loss_rate$plot_facet
+```
+
+```{r}
+dir_tmp <- get_todays_file_directory("figures")
+all_metrics <- get_ggplot_labs(return_available_vars = TRUE)
+all_files <- list()
+
+for (my_metric in all_metrics) {
+  for (my_plot in c("plot_facet", "plot_allinone")) {
+    
+    my_p <- tt_height[[my_metric]][[my_plot]]
+      
+    my_file <- paste0(
+        dir_tmp, "/",
+        "tt_height-",
+        my_metric, "-",
+        my_plot,
+        ".jpg"
+      )
+    
+    ggsave(my_file, my_p, height = 7, width = 10)
+    
+    all_files <- append(all_files, my_file)
+  }
+  
+}
+
+path_to_plots_tt_height <- all_files |> unlist()
+load_or_save_latest_file(path_to_plots_tt_height, "save")
+```
+
+
+### Sylvoecoregions
+```{r}
+tt_gre <- 
+  get_temporal_trends_for_1_group(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "gre",
+    n_groups_1         = 9,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+)
+```
+
+
+## Two Groups
+
+Note that patterns here are less clear and more variable because we require the data to have information on age and species.
+
+```{r}
+tt_species_height <- 
+  get_temporal_trends_for_2_groups(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "genus_lat",
+    name_group_2       = "height_class",
+    n_groups_1         = 9,
+    n_groups_2         = 10,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+  )
+
+tt_species_height$both_groups
+```
+
+
+```{r}
+tt_height_species <- 
+  get_temporal_trends_for_2_groups(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "height_class",
+    name_group_2       = "genus_lat",
+    n_groups_1         = 10,
+    n_groups_2         = 9,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+  )
+tt_height_species$both_groups
+```
+
+
+```{r}
+```
