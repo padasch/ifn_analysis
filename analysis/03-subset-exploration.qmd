@@ -240,11 +240,17 @@ df_plus_age_height_classes <-
 #   )
 ```
 
+```{r}
+df_tmp <- df_plus_age_height_classes
+df_geo <- df_tmp |> mutate(gre = substr(ser, 1,1))
+```
+
+
 ## Add Shadow Growth of Circumference
 ### Cut Trees
 ```{r}
 # Create temporary df for this section
-df_tmp <- df_plus_age_height_classes
+df_tmp <- df_geo
 
 # Split datasets into cut and not cut
 idx <- which(df_tmp$tree_state_2 == "cut")
