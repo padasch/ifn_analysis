@@ -3,7 +3,6 @@ get_temporal_trends_for_1_group <- function(
     name_group_1       = NULL,
     n_groups_1         = 9,
     prescribe_g1       = NULL,
-    my_target          = NULL,
     min_trees_per_site = NULL,
     min_sites_per_year = NULL
 ) {
@@ -13,7 +12,6 @@ get_temporal_trends_for_1_group <- function(
   # group_1: Outter group for which grouping should be done (for double-plot, this is the facet)
   # n_groups_1: The n most common levels of group_1 (set to 9 by default for nice facet)
   # prescribe_g1: Prescribed list of factor levels for which g1 should be filtered for
-  # my_target: The metric of change that should be plotted
   # min_trees_per_site: The minimum number of trees that need to be in a site to calculate that
   #   site's metrics of change.
   # min_sites_per_year: What is the minimum number of sites that must be observed per year?
@@ -23,7 +21,6 @@ get_temporal_trends_for_1_group <- function(
   if (is.null(name_group_1)) stop("Missing input for: name_group_1")
   if (is.null(n_groups_1)) stop("Missing input for: n_groups_1")
   # if(is.null(prescribe_g1)) stop("Missing input for: prescribe_g1")
-  if (is.null(my_target)) stop("Missing input for: my_target")
   if (is.null(min_trees_per_site)) stop("Missing input for: min_trees_per_site")
   if (is.null(min_sites_per_year)) stop("Missing input for: min_sites_per_year")
   
@@ -120,6 +117,14 @@ get_temporal_trends_for_1_group <- function(
   
   for (my_target in all_vars) {
     
+    # Clear all loop variables
+    rm(
+      list = c("df_plot", "tree_count_info", "df_stats", 
+               "plot_allinone", "plot_facet", "my_labs",
+               "my_ymin", "my_ymax"
+               )
+    )
+    
     # Target-based variables
     var_mean <- paste0(my_target, "_mean")
     var_se   <- paste0(my_target, "_se")
@@ -170,6 +175,7 @@ get_temporal_trends_for_1_group <- function(
     # Timeseries with enough counts
     df_summarised_mincounts <-
       df_summarised |> 
+      filter(!is.infinite(get(var_mean))) |> 
       group_by_at(my_grouping[-c(1,2)]) |> 
       nest() |> 
       mutate(census_counts = map_dbl(data, ~nrow(.)))
@@ -183,8 +189,8 @@ get_temporal_trends_for_1_group <- function(
           ~ cor.test(.[[var_mean]], .[["campagne_1"]], method = "kendall") |>
             list()),
         
-        kendall_pval = map_dbl(
-          kendall_test, ~ unlist(.) |> pluck(2) |> as.double() |> round(4)
+        kendall_pval = map_dbl(kendall_test, ~ unlist(.) |> pluck(2) |> as.double() |> round(3)),
+        kendall_tau  = map_dbl(kendall_test, ~ unlist(.) |> pluck(3) |> as.double() |> round(3)
         )
       )
     
@@ -194,7 +200,8 @@ get_temporal_trends_for_1_group <- function(
       filter(census_counts <= min_census_counts) |> 
       mutate(
         kendall_test = list(list(NA)),
-        kendall_pval = NA
+        kendall_pval = NA,
+        kendall_tau  = NA,
       )
     
     df_stats <- bind_rows(df_stats_yes, df_stats_no)
@@ -218,12 +225,22 @@ get_temporal_trends_for_1_group <- function(
         .names = "{col}"
       ))
     
-    # Attach tree count information
-    df_plot <-
+    # Create df_plot
+    df_pre_plot <- 
       df_summarised |> 
       left_join(tree_count_info, by = join_by(group_1)) |> 
-      mutate(group_1_f = as.factor(paste0(group_1, " (N = ", n, ")")))
+      mutate(
+        group_1_f = as.factor(paste0(group_1, " (N = ", n, ")")),
+        my_mean = get(var_mean),
+        my_se   = get(var_se)
+      ) |> 
+      select(group_1, group_1_f, campagne_1, my_mean, my_se) 
     
+    df_plot <-
+      df_pre_plot |> 
+      filter(!is.infinite(my_mean))
+    
+    # Create df_stats
     df_stats <- 
       df_stats |> 
       left_join(tree_count_info, by = join_by(group_1)) |> 
@@ -246,17 +263,22 @@ get_temporal_trends_for_1_group <- function(
     # ______________________________________________________________________________
     # Create plots
     
-    # Show only time-series that have 4 or more data points
-    min_count_for_plot <- 
+    # Show only time-series that have n or more data points
+    groups_to_show <- 
       df_summarised_mincounts |>
       filter(census_counts > min_census_counts_for_plot) |> 
       pull(group_1)
     
-    df_plot <- df_plot |> filter(group_1 %in% min_count_for_plot)
+    if (length(groups_to_show) == 0 ) {
+      df_plot <- df_pre_plot |> mutate(my_mean = NA, my_se = NA)
+    } else {
+      df_plot <- df_plot |> filter(group_1 %in% groups_to_show)
+    }
+    
     
     # Set axis limits
-    my_ymax <- max(df_plot[[var_mean]] + df_plot[[var_se]], na.rm = TRUE)
-    my_ymin <- min(df_plot[[var_mean]] - df_plot[[var_se]], na.rm = TRUE)
+    my_ymax <- max(df_plot$my_mean + df_plot$my_se, na.rm = TRUE)
+    my_ymin <- min(df_plot$my_mean - df_plot$my_se, na.rm = TRUE)
     
     # Get legend title if available
     my_legend <- name_group_1
@@ -272,7 +294,7 @@ get_temporal_trends_for_1_group <- function(
       ggplot(
         aes(
           x = campagne_1,
-          y = get(var_mean),
+          y = my_mean,
           # color = group_1_f,
           group = group_1_f
         )
@@ -281,8 +303,8 @@ get_temporal_trends_for_1_group <- function(
       geom_point() +
       geom_errorbar(
         aes(
-          ymin = get(var_mean) - get(var_se),
-          ymax = get(var_mean) + get(var_se)
+          ymin = my_mean - my_se,
+          ymax = my_mean + my_se
         ),
         # position = position_dodge(width = 0.2),
         # Adjust the width as needed
@@ -291,10 +313,11 @@ get_temporal_trends_for_1_group <- function(
       geom_line() +
       geom_text(
         data = df_stats,
-        aes(label = paste0("Kendall p = ", kendall_pval),
-            x = 2013,
-            y = my_ymax*0.975),
-        vjust = -1,
+        aes(label = paste0("Kendall: p = ", kendall_pval, ", tau = ", kendall_tau),
+            x = -Inf,
+            y = Inf),
+        hjust = -0.25,
+        vjust = 1.75,
         fontface = "italic",
       ) +
       ylim(
@@ -317,7 +340,7 @@ get_temporal_trends_for_1_group <- function(
       ggplot(
         aes(
           x = campagne_1,
-          y = get(var_mean),
+          y = my_mean,
           color = group_1_f,
           group = group_1_f
         )
@@ -325,8 +348,8 @@ get_temporal_trends_for_1_group <- function(
       geom_point() +
       geom_errorbar(
         aes(
-          ymin = get(var_mean) - get(var_se),
-          ymax = get(var_mean) + get(var_se)
+          ymin = my_mean - my_se,
+          ymax = my_mean + my_se
         ),
         # position = position_dodge(width = 0.2),
         # Adjust the width as needed
