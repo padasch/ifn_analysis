@@ -47,56 +47,77 @@ paths_to_maps <-
   readRDS(here("data/tmp/20231017-140959_path_to_maps.rds")) |> 
   str_replace("/Users/pascal/repos/padasch/ifn_analysis", here())
 
-# Temporal Trends
-tt_groups <- c("species", "height", "greco") # TODO: species-height, height-species
+### Temporal Trends ----
+# Add new data:
+# 1. Add rds file to paths
+# 2. Adjust get_filename_for_tt to match filename
+
+tt_groups    <- c("species", "height", "greco")
+tt_groups_2g <- c("species_height", "height_species",
+                  "species_gre", "gre_species",
+                  "height_gre", "gre_height")
 
 tt_paths <- c(
   readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_gre.rds")[1])),
   readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_species.rds")[1])),
-  readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_height.rds")[1]))
-)
+  readRDS(paste0(list.files(recursive = T, pattern = "path_to_plots_tt_height.rds")[1]))) |> 
+  str_replace("/Users/pascal/repos/padasch/ifn_analysis/ifna_shiny_app", here())
 
+tt_paths_2g <- c(
+  readRDS(paste0(list.files(recursive = T, pattern = "tt_species_height.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "tt_height_species.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "tt_species_gre.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "tt_gre_species.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "tt_height_gre.rds")[1])),
+  readRDS(paste0(list.files(recursive = T, pattern = "tt_gre_height.rds")[1]))
+  ) |> 
+  str_replace("/Users/pascal/repos/padasch/ifn_analysis/ifna_shiny_app", here())
 
 # ______________________________________________________________________________
 # Functions ----
 get_filename_for_tt <- function(
     my_metric,
     my_group,
-    facet_or_all,
-    tt_paths) {
+    tt_paths,
+    facet_or_allinone = NULL
+   ) {
   
-  # Which plot
-  if (facet_or_all == "facet") {
-    my_plot <- "plot_facet"
+  # 1 Group
+  if (!str_detect(my_group, "_")) {
+    # HEIGHT
+    if (my_group == "height") {
+      my_group <- "tt_height"
+    }
+    
+    # SPECIES
+    if (my_group == "species") {
+      my_group <- "tt_species"
+    }
+    
+    # GRECO
+    if (my_group == "greco") {
+      my_group <- "tt_gre"
+    }
+    
+    my_file <- paste0(
+      my_group, "-",
+      my_metric, "-",
+      "plot_", facet_or_allinone,
+      ".jpg"
+    )
+  } else if (str_detect(my_group, "_")) {
+    # 2 Groups
+    my_file <- paste0(
+      "tt_",
+      my_group, "-",
+      my_metric,
+      ".jpg"
+    )
+    
+  } else {
+    my_file <- "Filename is wrong!"
+    return(my_file)
   }
-  if (facet_or_all == "all") {
-    my_plot <- "plot_allinone"
-  }
-  
-  # HEIGHT
-  if (my_group == "height") {
-    my_group <- "tt_height"
-    tt_paths  <- paths_to_tt_height
-  }
-  
-  # SPECIES
-  if (my_group == "species") {
-    my_group <- "tt_species"
-    tt_paths  <- paths_to_tt_species
-  }
-  
-  # GRECO
-  if (my_group == "greco") {
-    my_group <- "tt_gre"
-    tt_paths  <- paths_to_tt_gre
-  }
-  
-  my_file <- paste0(
-    my_group, "-",
-    my_metric, "-",
-    my_plot,
-    ".jpg"
-  )
   
   my_file <- tt_paths[grep(my_file, tt_paths)]
   my_file
@@ -179,6 +200,10 @@ ui <- fluidPage(
     type="text/css",
     "#tt_facet img {max-width: 100%; width: 100%; height: auto}"
   )),
+  tags$head(tags$style(
+    type="text/css",
+    "#tt_2g img {max-width: 100%; width: 100%; height: auto}"
+  )),
   
   # Tabs
   tabsetPanel(
@@ -217,9 +242,9 @@ ui <- fluidPage(
                  plotOutput("hexmap", height = "auto")
                )
              )),
-    ## Tab: Temporal Trends ----
+    ## Tab: Temporal Trends (1 Group) ----
     tabPanel(
-      "Temporal Trends",
+      "Temporal Trends (1 Group)",
       sidebarLayout(
         sidebarPanel(
           selectInput(
@@ -240,6 +265,31 @@ ui <- fluidPage(
           plotOutput("tt_allinone", height = "auto"),
           h1("Split by group"),
           plotOutput("tt_facet", height = "auto")
+        )
+      )
+    ),
+    
+    ## Tab: Temporal Trends (2 Groups) ----
+    tabPanel(
+      "Temporal Trends (2 Groups)",
+      sidebarLayout(
+        sidebarPanel(
+          selectInput(
+            "tt_group_2g",
+            "Select grouping for temporal trend",
+            choices = tt_groups_2g,
+            selected = tt_groups_2g[1]
+          ),
+          selectInput(
+            "tt_metric_2g",
+            "Select metric of change",
+            choices = all_metrics,
+            selected = "ba_loss_rate"
+          )
+        ),
+        mainPanel(
+          plotOutput("tt_2g", height = "auto")
+          # textOutput("debug_text")
         )
       )
     ),
@@ -353,20 +403,20 @@ server <- function(input, output) {
       list(src = paste0(my_filename()))
     }, deleteFile = FALSE)
   
-  # Tab: Temporal Trends ----
+  # Tab: Temporal Trends (1 Group) ----
   # ______________________________________________________________________________
   
   # ALL IN ONE
   tt_filename_allinone <- reactive({
     
-    my_group <- input$tt_group
+    my_group  <- input$tt_group
     my_metric <- input$tt_metric
     
     get_filename_for_tt(
       my_metric,
       my_group,
-      "all",
-      tt_paths
+      tt_paths,
+      "allinone"
     )
    
   })
@@ -378,14 +428,14 @@ server <- function(input, output) {
   # FACET 
   tt_filename_facet <- reactive({
     
-    my_group <- input$tt_group
+    my_group  <- input$tt_group
     my_metric <- input$tt_metric
     
     get_filename_for_tt(
       my_metric,
       my_group,
-      "facet",
-      tt_paths
+      tt_paths,
+      "facet"
     )
   })
   
@@ -393,6 +443,40 @@ server <- function(input, output) {
     renderImage({
       list(src = paste0(tt_filename_facet()))
     }, deleteFile = FALSE)
+  
+  # output$debug_text <-
+  #   renderText({
+  #     paste(tt_filename_allinone(), " ------------ ",
+  #           tt_filename_facet()
+  #           )
+  #   })
+  
+  # Tab: Temporal Trends (2 Groups) ----
+  # ______________________________________________________________________________
+  
+  # ALL IN ONE
+  tt_filename_2g <- reactive({
+    
+    my_group  <- input$tt_group_2g
+    my_metric <- input$tt_metric_2g
+    
+    get_filename_for_tt(
+      my_metric,
+      my_group,
+      tt_paths_2g
+    )
+   
+  })
+  
+  output$tt_2g <-
+    renderImage({
+      list(src = paste0(tt_filename_2g()))
+    }, deleteFile = FALSE)
+  
+  output$debug_text <-
+    renderText({
+      paste(tt_filename_2g(), " ------------ ")
+    })
   
   # Tab: Data Exploration ----
   # ______________________________________________________________________________
