@@ -4,7 +4,6 @@ get_temporal_trends_for_2_groups <- function(
     name_group_2       = "height_class",
     n_groups_1         = 3,
     n_groups_2         = 10,
-    my_target          = "ba_loss_rate",
     min_trees_per_site = 3,
     min_sites_per_year = 5
 ) {
@@ -55,8 +54,8 @@ get_temporal_trends_for_2_groups <- function(
     counter <- counter + 1
     
     message(paste0(
-      "\014",
-      "> get_temporal_trends_for_2_groups():",
+      "-------------------------------------",
+      "\n> get_temporal_trends_for_2_groups():",
       "\n  ...working on group: ", counter, " / ", length(most_common_lvls_g2)))
     
     df_loop <- df_tmp |> filter(group_2 %in% my_lvl)
@@ -67,22 +66,26 @@ get_temporal_trends_for_2_groups <- function(
         name_group_1 = name_group_1,
         n_groups_1   = n_groups_1,
         prescribe_g1 = most_common_lvls_g1,
-        my_target    = my_target,
         min_trees_per_site = min_trees_per_site,
         min_sites_per_year = min_sites_per_year
       )
     
-    df_loop <- list_out[[my_lvl]]$df_plot |> mutate(group_2 = my_lvl)
-    df_loop_tree <- list_out[[my_lvl]]$df_treecount |> mutate(group_2 = my_lvl)
+    # Extract data for each metric
+    for (my_target in names(list_out[[my_lvl]])) {
+      
+      df_loop      <- list_out[[my_lvl]][[my_target]]$df_plot      |> mutate(group_2 = my_lvl, metric = my_target)
+      df_loop_tree <- list_out[[my_lvl]][[my_target]]$df_treecount |> mutate(group_2 = my_lvl, metric = my_target)
+      
+      df_bothgroups <-  bind_rows(df_bothgroups, df_loop)
+      df_treecount  <-  bind_rows(df_treecount, df_loop_tree)
+    }
     
-    df_bothgroups <-  bind_rows(df_bothgroups, df_loop)
-    df_treecount  <-  bind_rows(df_treecount, df_loop_tree)
   }
   
   # Add treecount to group 1
   df_count_g1 <- 
     df_treecount |> 
-    group_by(group_1) |> 
+    group_by(group_1, metric) |> 
     summarise(across(
       .cols = n, 
       .fns  = sum, na.rm = TRUE,
@@ -91,7 +94,7 @@ get_temporal_trends_for_2_groups <- function(
   
   df_count_g2 <- 
     df_treecount |> 
-    group_by(group_2) |> 
+    group_by(group_2, metric) |> 
     summarise(across(
       .cols = n, 
       .fns  = sum, na.rm = TRUE,
@@ -100,13 +103,14 @@ get_temporal_trends_for_2_groups <- function(
   
   df_plot <-
     df_bothgroups |> 
-    left_join(df_count_g1, by = join_by(group_1)) |> 
-    left_join(df_count_g2, by = join_by(group_2)) |> 
+    left_join(df_count_g1, by = join_by(group_1, metric)) |> 
+    left_join(df_count_g2, by = join_by(group_2, metric)) |> 
     mutate(
       group_1_f = as.factor(paste0(group_1, " (N = ", n_g1, ")")),
       group_2_f = as.factor(paste0(group_2, " (N = ", n_g2, ")"))
       )
   
+  # Fix height class order for group 1
   if (name_group_1 == "height_class") {
     all_levels <- levels(df_plot$group_1_f)
     position_5m <- grep("<5m", all_levels)
@@ -119,6 +123,7 @@ get_temporal_trends_for_2_groups <- function(
     }
   }
   
+  # Fix height class order for group 2
   if (name_group_2 == "height_class") {
     all_levels <- levels(df_plot$group_2_f)
     position_5m <- grep("<5m", all_levels)
@@ -135,42 +140,87 @@ get_temporal_trends_for_2_groups <- function(
   # ______________________________________________________________________________
   # Plot
   
-  var_mean <- paste0(my_target, "_mean")
-  var_se   <- paste0(my_target, "_se")
-  
-  plot_2groups <- 
-    df_plot |> 
-    ggplot(
-      aes(
-        x = campagne_1,
-        y = get(var_mean),
-        color = group_2_f,
-        group = group_2_f,
+  for (my_target in unique(df_plot$metric)) {
+    
+    # Get ggplot labs
+    my_labs  <- get_ggplot_labs(my_target)
+    my_labs$caption <- paste0(
+      paste0(my_labs$caption),
+      "\nData was filtered for sites with at least ", min_trees_per_site, " trees per site.",
+      "\nData was filtered for years with at least ", min_sites_per_year, " sites per year.",
+      collapse = ""
+    )
+    
+    df_i <- 
+      df_plot |>
+      filter(metric == my_target)
+    
+    plot_2groups <-
+      df_i |>
+      mutate(my_mean = ifelse(is.na(my_mean), -10, my_mean))  |> 
+      ggplot(
+        aes(
+          x = campagne_1,
+          y = my_mean,
+          color = group_2_f,
+          group = group_2_f,
+        )
+      ) +
+      facet_wrap(~group_1_f) +
+      geom_point() +
+      geom_errorbar(
+        aes(
+          ymin = my_mean - my_se,
+          ymax = my_mean + my_se
+        ),
+        # position = position_dodge(width = 0.2),
+        # Adjust the width as needed
+        width = 0.1  # Adjust the width of the error bars
+      ) +
+      geom_line() +
+      theme_classic() +
+      labs(
+        title   = my_labs$title,
+        caption = my_labs$caption,
+        color   = name_group_2,
+        x = "Year of First Census",
+        y = my_labs$axis
       )
-    ) +
-    facet_wrap(~group_1_f) +
-    geom_point() +
-    geom_errorbar(
-      aes(
-        ymin = get(var_mean) - get(var_se),
-        ymax = get(var_mean) + get(var_se)
-      ),
-      # position = position_dodge(width = 0.2),
-      # Adjust the width as needed
-      width = 0.1  # Adjust the width of the error bars
-    ) +
-    geom_line() +
-    theme_classic() +
-    labs(
-      # title   = txt_title,
-      # caption = txt_caption,
-      color = name_group_2,
-      x = "Year of First Census",
-      y = my_target
-    ) + 
-    scale_color_viridis_d(end = 0.9)
+    
+    # Set coloring 
+    if (name_group_2 %in% c("height_class")) {
+      plot_2groups <- 
+        plot_2groups + 
+        scale_color_viridis_d(end = 0.9, na.value = "white")
+    } else {
+      plot_2groups <- 
+        plot_2groups + 
+        scale_color_brewer(palette = "Paired")
+    }
+    
+    # Set axis limits
+    if ((df_i |> drop_na(my_mean) |> nrow()) == 0) {
+      # Case when only NA values in the data
+      plot_2groups <- plot_2groups + ylim(0, Inf)
+    } else {
+      
+      # Case when not only NA data in the data
+      my_ymax <- max(df_i$my_mean + df_i$my_se, na.rm = TRUE)
+      my_ymin <- min(df_i$my_mean - df_i$my_se, na.rm = TRUE)
+      
+      plot_2groups <- 
+        plot_2groups + 
+        ylim(
+          my_ymin,
+          my_ymax + my_ymax*0.1
+          )
+      
+      rm(list = c("my_ymax", "my_ymin"))
+    }
+    
+    list_out[["plot_both_groups"]][[my_target]] <- plot_2groups
+  }
   
-  list_out[["both_groups"]] <- plot_2groups
   
   return(list_out)
 }

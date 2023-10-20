@@ -117,13 +117,15 @@ get_temporal_trends_for_1_group <- function(
   
   for (my_target in all_vars) {
     
-    # Clear all loop variables
-    rm(
-      list = c("df_plot", "tree_count_info", "df_stats", 
-               "plot_allinone", "plot_facet", "my_labs",
-               "my_ymin", "my_ymax"
-               )
-    )
+    # Clear all loop variables (probably not needed but ensures no variable carry-over)
+    if (my_target != all_vars[1]) {
+      rm(
+        list = c("df_plot", "tree_count_info", "df_stats", 
+                 "plot_allinone", "plot_facet", "my_labs",
+                 "my_ymin", "my_ymax"
+                 )
+      )
+    }
     
     # Target-based variables
     var_mean <- paste0(my_target, "_mean")
@@ -139,8 +141,8 @@ get_temporal_trends_for_1_group <- function(
     list_out[[my_target]] <- list()
     df_loop <- tibble(target = my_target)
     
+    # Get ggplot labs
     my_labs  <- get_ggplot_labs(my_target)
-    
     my_labs$caption <- paste0(
       paste0(my_labs$caption),
       "\nData was filtered for sites with at least ", min_trees_per_site, " trees per site.",
@@ -274,7 +276,6 @@ get_temporal_trends_for_1_group <- function(
     } else {
       df_plot <- df_plot |> filter(group_1 %in% groups_to_show)
     }
-    
     
     # Set axis limits
     my_ymax <- max(df_plot$my_mean + df_plot$my_se, na.rm = TRUE)
