@@ -9,6 +9,7 @@ library(ggplot2)
 library(ggridges)
 library(sf)
 library(here)
+library(patchwork)
 source("R/f_create_hexmap_from_aggregated_data.R")
 source("R/f_load_or_save_latest_file.R")
 
@@ -79,7 +80,7 @@ tt_paths_2g <- c(
 de_my_x_selection <- my_data |> select(where(is.numeric)) |> names()
 de_my_y_selection <- my_data |> select(where(is.numeric)) |> names()
 de_my_g_selection <- my_data |> select(where(is.factor)) |> names()
-de_my_g_selection <- c(de_my_g_selection, "g")
+de_my_g_selection <- c(de_my_g_selection, "none")
 
 # ______________________________________________________________________________
 # Functions ----
@@ -307,52 +308,50 @@ ui <- fluidPage(
              sidebarLayout(
                sidebarPanel(
                  selectInput(
-                   "species_de",
-                   "Select SPECIES (at the genus level):",
-                   choices = unique(my_species_list),
-                   selected = unique(my_species_list)[1]
+                   "de_my_x",
+                   "Select x variable:",
+                   choices = de_my_x_selection,
+                   selected = "age13"
                  ),
                  selectInput(
-                   "tree_metric",
-                   "Select TREE Metric",
-                   choices = c("Circumference", "Diameter BH", "Basal Area"),
-                   selected = "Basal Area"
+                   "de_my_y",
+                   "Select y variable:",
+                   choices = de_my_y_selection,
+                   selected = "htot"
                  ),
                  selectInput(
-                   "change_metric",
-                   "Select CHANGE Metric",
-                   choices = c("Absolute", "Relative"),
-                   selected = "Relative"
+                   "de_my_g",
+                   "Select grouping variable:",
+                   choices = de_my_g_selection,
+                   selected = "genus_lat"
                  ),
-                 selectInput(
-                   "grouping_variable",
-                   "Select GROUPING Variable",
-                   choices = c("by Age", "by Height"),
-                   selected = "by Height"
-                 ),
-                 numericInput("xlim_max",
-                              "Enter UPPER limit of x-axis:",
-                              value = 20),
-                 numericInput("xlim_min",
-                              "Enter LOWER limit of y-axis:",
-                              value = -5)
-                 ,
                  numericInput(
-                   "text_size",
-                   "Change plot TEXT size:",
-                   value = 10
+                   "de_text_size",
+                   "Change text size of figures:",
+                   value = 20,
+                   step = 0.5
                  )
                ),
                
                mainPanel(
                  h1("Data Exploration"),
-                 markdown("Vertical lines show mean of distribution"),
-                 plotOutput("dataexp1", height = 1000)
+                 h2("Scatterplot"),
+                 plotOutput("de_scatter", height = "750px"),
+                 h2("Linear Regression Models"),
+                 tableOutput("de_table"),
+                 h2("Distribution of x-variable"),
+                 plotOutput("de_distr_x", height = "1000px"),
+                 h2("Distribution of y-variable"),
+                 plotOutput("de_distr_y", height = "1000px"),
+                 h2("Distribution of grouping-variable"),
+                 plotOutput("de_distr_g", height = "1000px")
                )
              )),
     
     ## Tab: Datatable ----
-    tabPanel("Data", dataTableOutput("data_table")),
+    tabPanel("Data", 
+             downloadButton("data_dowload", "Download .tsv"),
+             dataTableOutput("data_table"))
   )
 )
 
@@ -365,11 +364,11 @@ server <- function(input, output) {
   ## Fix plot text size ----
   my_size <- reactive({
     theme(
-      text = element_text(size = input$text_size),  # Set the base size
-      title = element_text(size = input$text_size * 1.5),  # Increase title size
-      axis.title = element_text(size = input$text_size * 1.2),  # Increase axis title size
-      axis.text = element_text(size = input$text_size * 0.8),  # Decrease axis text size
-      legend.text = element_text(size = input$text_size * 0.8)  # Decrease legend text size
+      text = element_text(size = input$de_text_size),  # Set the base size
+      title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+      axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+      axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+      legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
     )
   })
   
@@ -488,118 +487,297 @@ server <- function(input, output) {
   
   # Tab: Data Exploration ----
   # ______________________________________________________________________________
+  # df_plot
   
-  my_list <- 
+  de_df_plot <- 
     reactive({
+      # Get input
+      my_x     <- input$de_my_x    
+      my_y     <- input$de_my_y    
+      my_group <- input$de_my_g
       
-      set_list <- list()
-      
-      # Metric to plot
-      if (input$tree_metric == "Circumference" & input$change_metric == "Absolute") {
-        set_list$var <- "c13_change_abs_yr"
-        set_list$title  <- paste0(input$change_metric, " Change of ", 
-                                  input$tree_metric, " in [m/yr]")
-        set_list$subtitle <- paste0(
-          "For ", input$species_de, " grouped ", input$grouping_variable
-        )
-      } else if (input$tree_metric == "Circumference" & input$change_metric == "Relative") {
-        set_list$var <- "c13_change_perc_yr"
-        set_list$title  <- paste0(input$change_metric, " Change of ", 
-                                  input$tree_metric, " in [%/yr]")
-        set_list$subtitle <- paste0(
-          "For ", input$species_de, " grouped ", input$grouping_variable
-        )
-      } else if (input$tree_metric == "Diameter BH" & input$change_metric == "Absolute") {
-        set_list$var <- "dbh_change_abs_yr"
-        set_list$title  <- paste0(input$change_metric, " Change of ", 
-                                  input$tree_metric, " in [m/yr]")
-        set_list$subtitle <- paste0(
-          "For ", input$species_de, " grouped ", input$grouping_variable
-        )
-      } else if (input$tree_metric == "Diameter BH" & input$change_metric == "Relative") {
-        set_list$var <- "dbh_change_perc_yr"
-        set_list$title  <- paste0(input$change_metric, " Change of ", 
-                                  input$tree_metric, " in [%/yr]")
-        set_list$subtitle <- paste0(
-          "For ", input$species_de, " grouped ", input$grouping_variable
-        )
-      } else if (input$tree_metric == "Basal Area" & input$change_metric == "Absolute") {
-        set_list$var <- "ba_change_abs_yr"
-        set_list$title  <- paste0(input$change_metric, " Change of ", 
-                                  input$tree_metric, " in [m^2/ha/yr]")
-        set_list$subtitle <- paste0(
-          "For ", input$species_de, " grouped ", input$grouping_variable
-        )
-      } else if (input$tree_metric == "Basal Area" & input$change_metric == "Relative") {
-        set_list$var <- "ba_change_perc_yr"
-        set_list$title  <- paste0(input$change_metric, " Change of ", 
-                                  input$tree_metric, " in [%/yr]")
-        set_list$subtitle <- paste0(
-          "For ", input$species_de, " grouped ", input$grouping_variable
-        )
+      if (my_group == "none") {
+        df_plot <- 
+          nfi_dataset_for_analysis |> 
+          mutate(
+            x = get(my_x),
+            y = get(my_y)
+          ) |> 
+          select(x, y) |> 
+          drop_na(x, y)
+      } else {
+        df_plot <- 
+          nfi_dataset_for_analysis |> 
+          mutate(
+            x = get(my_x),
+            y = get(my_y),
+            g = get(my_group)
+          ) |> 
+          select(x, y, g) |> 
+          drop_na(x, y, g)
+        
+        top_10 <- 
+          df_plot$g |> 
+          table() |> 
+          sort(TRUE) |> 
+          head(12) |> 
+          as.data.frame() |> 
+          rename(g = Var1, n = Freq) |> 
+          arrange(g)
+        
+        df_plot <- 
+          df_plot |> 
+          filter(g %in% top_10$g) |> 
+          left_join(top_10, by = join_by(g)) |> 
+          mutate(g = as.factor(paste0(g, " (N = ", n,")"))) |> 
+          arrange(g)
       }
       
-      set_list
+      df_plot
     })
   
-  # Growth by age class
-  output$dataexp1 <- renderPlot({
+  ## Scatter plot ----
+  output$de_scatter <- renderPlot({
+    # Get input
+    my_x     <- input$de_my_x    
+    my_y     <- input$de_my_y    
+    my_group <- input$de_my_g
+    df_plot  <- de_df_plot()
     
-    set_list <- my_list()
-    
-    # Filter data if needed
-    if (input$species_de == "All Species") {
-      my_df <- my_data
+    if (my_group == "none") {
+      p <- 
+        df_plot |> 
+        ggplot() +
+        aes(x = x, y = y) +
+        geom_point(alpha = 0.2) +
+        geom_smooth(method = "lm") +
+        labs(
+          x = my_x,
+          y = my_y
+        ) +
+        theme_classic()
     } else {
-      my_df <- my_data |> filter(genus_lat == input$species_de)
+      p <- 
+        df_plot |> 
+        ggplot() +
+        aes(x = x, y = y, group = g) +
+        facet_wrap(~g) +
+        geom_point(alpha = 0.2) +
+        geom_smooth(method = "lm") +
+        labs(
+          x = my_x,
+          y = my_y,
+          color = my_group,
+          fill = my_group
+        ) +
+        theme_classic()
     }
-    
-    if (input$grouping_variable == "by Age") {
-      my_group <- "age_class"
-    } else {
-      my_group <- "height_class"
-    }
-    
-    # Create plot
-    my_df |>
-      mutate(
-        var = get(set_list$var),
-        grouping = get(my_group),
-        campagne_1 = fct_rev(as.factor(campagne_1))) |> 
-      drop_na(
-        var, 
-        grouping
-        ) |> 
-      ggplot() +
-      aes(
-        x = var,
-        y = campagne_1,
-        fill = campagne_1, 
-      ) +
-      stat_density_ridges(quantile_lines = TRUE,
-                          quantiles = 0.5,
-                          jittered_points = TRUE,
-                          alpha = 0.7) +
-      xlim(input$xlim_min, 
-           input$xlim_max) +
-      scale_fill_viridis_d() +
-      facet_wrap(~grouping, nrow = 3) +
-      labs(
-        title = set_list$title,
-        subtitle = set_list$subtitle,
-        y     = "Year of First Census",
-        fill  = "Year of First Census",
-        x     = "Change in chosen metric"
-      ) +
-      guides(fill = guide_legend(reverse = TRUE, nrow = 1)) +
+    p +
       theme(
         legend.position = "bottom",
-        text = element_text(size = input$text_size),  # Set the base size
-        title = element_text(size = input$text_size * 1.5),  # Increase title size
-        axis.title = element_text(size = input$text_size * 1.2),  # Increase axis title size
-        axis.text = element_text(size = input$text_size * 0.8),  # Decrease axis text size
-        legend.text = element_text(size = input$text_size * 0.8)  # Decrease legend text size
+        text = element_text(size = input$de_text_size),  # Set the base size
+        title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+        axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+        axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+        legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
       )
+  })
+  
+  ## LM Table ----
+  output$de_table <- renderTable({
+    # Get input
+    my_x     <- input$de_my_x    
+    my_y     <- input$de_my_y    
+    my_group <- input$de_my_g
+    df_plot  <- de_df_plot()
+
+    if (my_group == "none") {    
+      my_lm <- lm(y ~ x, data = df_plot) |> summary()
+      de_table <- 
+        tibble(
+        intercept_est   = my_lm$coefficients[1, 1],
+        slope_est       = my_lm$coefficients[2, 1],
+        slope_se        = my_lm$coefficients[2, 2],
+        slope_pval      = my_lm$coefficients[2, 4],
+        R2              = my_lm$r.squared,
+        adjR2           = my_lm$adj.r.squared)
+      
+    } else {
+      de_table <- 
+        df_plot |>
+        group_by(g) |>
+        nest() |>
+        mutate(
+          lm_result       = map(data, ~lm(y ~ x, data = .)),
+          model_summary   = map(lm_result, ~summary(.)),
+          intercept_est   = map_dbl(model_summary, ~.$coefficients[1, 1]),
+          intercept_se    = map_dbl(model_summary, ~.$coefficients[1, 2]),
+          intercept_pval  = map_dbl(model_summary, ~.$coefficients[1, 4]),
+          slope_est       = map_dbl(model_summary, ~.$coefficients[2, 1]),
+          slope_se        = map_dbl(model_summary, ~.$coefficients[2, 2]),
+          slope_pval      = map_dbl(model_summary, ~.$coefficients[2, 4]),
+          R2              = map_dbl(model_summary, ~.$r.squared),
+          adjR2           = map_dbl(model_summary, ~.$adj.r.squared)
+        ) |> 
+        select(-data, -lm_result, -model_summary, -R2)
+    }
+    de_table
+    
+  })
+  
+  ## Distr ----
+  output$de_distr_x <- renderPlot({
+    # Get input
+    my_x     <- input$de_my_x    
+    my_y     <- input$de_my_y    
+    my_group <- input$de_my_g
+    df_plot  <- de_df_plot()
+    
+    if (my_group == "none") {
+      p <- 
+        df_plot |> 
+        ggplot() +
+        aes(x = x) +
+        geom_density() +
+        geom_boxplot(
+          width = 0.001,
+          color = "grey50",
+          alpha = 0.5,
+          outlier.color = "red"
+        ) +
+        scale_fill_viridis_d() +
+        labs(x = my_x) +
+        theme_classic()
+      
+    } else {
+      p <- 
+        df_plot |> 
+        ggplot() +
+        aes(x = x, y = g, fill = factor(stat(quantile))) +
+        stat_density_ridges(
+          geom = "density_ridges_gradient",
+          scale = 0.85,
+          calc_ecdf = TRUE,
+          quantiles = 4, 
+          quantile_lines = TRUE, 
+          jittered_points = TRUE,
+          position = position_points_jitter(width = 0.05, height = 0, yoffset = -0.1),
+          point_shape = '|', 
+          point_size = 6, 
+          point_alpha = 0.75, 
+          alpha = 0.7
+        ) +
+        scale_fill_viridis_d(name = "Quartiles") +
+        labs(
+          x = my_x,
+          y = my_group
+          ) +
+        theme_classic()
+    }
+    
+      p +
+        theme(
+          legend.position = "bottom",
+          text = element_text(size = input$de_text_size),  # Set the base size
+          title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+          axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+          axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+          legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+        )
+  })
+ 
+output$de_distr_y <- renderPlot({
+    # Get input
+    my_x     <- input$de_my_x    
+    my_y     <- input$de_my_y    
+    my_group <- input$de_my_g
+    df_plot  <- de_df_plot()
+    
+    if (my_group == "none") {
+     p <- 
+        df_plot |> 
+        ggplot() +
+        aes(x = y) +
+        geom_density() +
+        geom_boxplot(
+          width = 0.001,
+          color = "grey50",
+          alpha = 0.5,
+          outlier.color = "red"
+        ) +
+        scale_fill_viridis_d() +
+        labs(x = my_y) +
+        theme_classic()
+      
+    } else {
+      p <- 
+        df_plot |> 
+        ggplot() +
+        aes(x = y, y = g, fill = factor(stat(quantile))) +
+        stat_density_ridges(
+          geom = "density_ridges_gradient",
+          scale = 0.85,
+          calc_ecdf = TRUE,
+          quantiles = 4, 
+          quantile_lines = TRUE, 
+          jittered_points = TRUE,
+          position = position_points_jitter(width = 0.05, height = 0, yoffset = -0.1),
+          point_shape = '|', 
+          point_size = 6, 
+          point_alpha = 0.75, 
+          alpha = 0.7
+        ) +
+        scale_fill_viridis_d(name = "Quartiles") +
+        labs(
+          x = my_y,
+          y = my_group
+          ) +
+        theme_classic()
+    }
+    
+      p +
+        theme(
+          legend.position = "bottom",
+          text = element_text(size = input$de_text_size),  # Set the base size
+          title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+          axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+          axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+          legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+        )
+  })
+  
+output$de_distr_g <- renderPlot({
+    # Get input
+    my_x     <- input$de_my_x    
+    my_y     <- input$de_my_y    
+    my_group <- input$de_my_g
+    df_plot  <- de_df_plot()
+    
+    if (my_group == "none") {
+     p <- ggplot()
+      
+    } else {
+      p <- 
+        df_plot |> 
+        ggplot() +
+        aes(y = g) +
+        labs(
+          x = "Count",
+          y = my_group
+        ) +
+        geom_bar() +
+        theme_classic()
+    }
+    
+      p +
+        theme(
+          legend.position = "bottom",
+          text = element_text(size = input$de_text_size),  # Set the base size
+          title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+          axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+          axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+          legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+        )
   })
   
   # Tab: Datatable ----
