@@ -101,14 +101,6 @@ df_tmp <-
     by = join_by("lat", "lon", "campagne_1")
   )
 
-# Turn all character variables into factors
-character_vars <- 
-  df_tmp |> 
-  select_if(is.character) |> 
-  names()
-message("> Character variables in the dataset turned into factors:",paste0(character_vars, sep = "\n"))
-for (var in character_vars) {df_tmp[[var]] <- as.factor(df_tmp[[var]])}
-
 df_merged <- df_tmp
 ```
 
