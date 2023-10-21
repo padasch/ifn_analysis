@@ -14,10 +14,13 @@ source("R/f_load_or_save_latest_file.R")
 
 # Load data ----
 # ______________________________________________________________________________
-my_data    <- readRDS("data/tmp/final_dataset_for_analysis.rds")
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+my_data <- nfi_dataset_for_analysis
 
 # Set fixed input ----
 # Input options
+
+### Spatial Trends ----
 my_species_list <- c(
   # "All Species",
   "Quercus",
@@ -41,7 +44,6 @@ all_metrics <-
     "ba_growth_rate",
     "ba_loss_abs",
     "ba_loss_rate")
-
 
 paths_to_maps <- 
   readRDS(here("data/tmp/20231017-140959_path_to_maps.rds")) |> 
@@ -72,6 +74,12 @@ tt_paths_2g <- c(
   readRDS(paste0(list.files(recursive = T, pattern = "tt_gre_height.rds")[1]))
   ) |> 
   str_replace("/Users/pascal/repos/padasch/ifn_analysis/ifna_shiny_app", here())
+
+### Data Exploration ----
+de_my_x_selection <- my_data |> select(where(is.numeric)) |> names()
+de_my_y_selection <- my_data |> select(where(is.numeric)) |> names()
+de_my_g_selection <- my_data |> select(where(is.factor)) |> names()
+de_my_g_selection <- c(de_my_g_selection, "g")
 
 # ______________________________________________________________________________
 # Functions ----
