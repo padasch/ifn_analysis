@@ -267,14 +267,14 @@ if (length(idx) != 0) {
   df_edit <- 
     df_edit |> 
     mutate(c13_2 = c13_1 + ir5 / 2,
-           shadow_growth = TRUE) |> 
+           shadow_growth = "yes") |> 
     drop_na(c13_2)
   
   # Combine datasets again
   df_comb_shadow_cut <- 
     bind_rows(
       df_edit,
-      df_keep |> mutate(shadow_growth = FALSE)
+      df_keep |> mutate(shadow_growth = "no")
       )
 } else {
   df_comb_shadow_cut <- df_tmp
@@ -301,14 +301,14 @@ if (length(idx) != 0) {
   df_edit <- 
     df_edit |> 
     mutate(c13_2 = c13_1 + ir5 / 2,
-           shadow_growth = TRUE) |> 
+           shadow_growth = "yes") |> 
     drop_na(c13_2)
   
   # Combine datasets again
   df_comb_shadow_dead <- 
     bind_rows(
       df_edit,
-      df_keep |> mutate(shadow_growth = FALSE))
+      df_keep |> mutate(shadow_growth = "no"))
 } else {
   df_comb_shadow_dead <- df_tmp
 }
@@ -334,14 +334,14 @@ if (length(idx) != 0) {
   df_edit <- 
     df_edit |> 
     mutate(c13_2 = c13_1 + ir5,
-           shadow_growth = TRUE) |> 
+           shadow_growth = "yes") |> 
     drop_na(c13_2)
   
   # Combine datasets again
   df_comb_shadow_alive <- 
     bind_rows(
       df_edit,
-      df_keep |> mutate(shadow_growth = FALSE))
+      df_keep |> mutate(shadow_growth = "no"))
 } else {
   df_comb_shadow_alive <- df_tmp
 }
@@ -386,10 +386,9 @@ df_comb_size <-
   select(-plot_area)
 ```
 
-## Variable Aggregation
-### Variables Overview
+## Create New Variables
 
-#### Placette
+### Vars Overview
 
 *PRELEV5:*
 Indicator for cutting
@@ -453,10 +452,9 @@ Other Land Use
 -   T = Network passage (compatible with wood production)
 -   X = ???
 
-
-### Land Use
+### Create functions
+#### Land Use Classification
 ```{r}
-# Define Functions
 classify_utip <- function(input){
   if (input %in% c(NA))  return(NA)
   if (input %in% c("A")) return("Agriculture")
@@ -501,31 +499,7 @@ classify_land_use <- function(uta1, uta2, utip_1, utip_2, autut_1, autut_2){
 }
 ```
 
-```{r}
-# Apply Functions
-df_tmp <- df_comb_size
-
-df_landuse <- 
-  df_tmp |> 
-  rowwise() |> 
-  mutate(
-    uta1         = classify_uta(uta1),
-    uta2         = classify_uta(uta2),
-    autut_1      = classify_autut(autut_1),
-    autut_2      = classify_autut(autut_2),
-    utip_1       = classify_utip(utip_1),
-    utip_2       = classify_utip(utip_2)
-    )
-
-df_landuse_merged <- 
-  df_landuse |> 
-  mutate(
-    land_use = classify_land_use(uta1, uta2, utip_1, utip_2, autut_1, autut_2),
-    land_use = as.factor(land_use)
-  )
-```
-
-### Variables of Change
+#### Land Use Change
 ```{r}
 # Create Functions
 
@@ -598,34 +572,7 @@ classify_land_use_intensity_change <- function(input_1, input_2){
 }
 ```
 
-```{r}
-# Apply Functions
-df_tmp <- df_landuse_merged
-
-tic()
-df_change <- 
-  df_tmp |> 
-  rowwise() |> 
-  mutate(
-    land_use_change = classify_land_use_intensity_change(land_use, autut_2),
-    cover_change    = classify_tree_cover_change(csa_1, csa_2),
-    land_use_change = as.factor(land_use_change),
-    cover_change    = as.factor(cover_change)
-  ) 
-toc()
-```
-
-### Natural Impact
-```{r}
-
-```
-
-```{r}
-
-```
-
-### Human Impact
-
+#### Human Influence
 New Variables:
   - human_activity: [NA, none, low, medium, high]
   - human_activity_var: indicator variable for activity assessment
@@ -743,17 +690,130 @@ classify_human_activity <- function(
 }
 ```
 
-```{r eval=FALSE}
-# TODO IS NOT WORKING, TAKES TOO LONG...
-# Apply Function
-df_tmp <- df_change
 
-df_humaninfluence <- 
+### Apply functions
+```{r}
+df_before_apply <- df_comb_size
+
+# Aggregate data to plot level to speed things up
+df_tmp <-
+  df_before_apply |> 
+  select(idp, uta1, uta2, autut_1, autut_2, utip_1, utip_2, csa_1, csa_2) |> 
+  distinct() |> 
+  mutate(
+    xxx = ifelse(
+      (is.na(uta1) &
+      is.na(uta2) &
+      is.na(autut_1) &
+      is.na(autut_2) &
+      is.na(utip_1) &
+      is.na(utip_2) &
+      is.na(csa_1) &
+      is.na(csa_2)),
+      "drop",
+      "keep"
+    )
+  ) |> 
+  filter(xxx == "keep") |> 
+  select(-xxx)
+```
+
+```{r}
+# Land Use Classification
+df_landuse <- 
   df_tmp |> 
+  rowwise() |> 
+  mutate(
+    uta1         = classify_uta(uta1),
+    uta2         = classify_uta(uta2),
+    autut_1      = classify_autut(autut_1),
+    autut_2      = classify_autut(autut_2),
+    utip_1       = classify_utip(utip_1),
+    utip_2       = classify_utip(utip_2)
+    )
+
+df_landuse_merged <- 
+  df_landuse |> 
+  mutate(
+    land_use = classify_land_use(uta1, uta2, utip_1, utip_2, autut_1, autut_2),
+    land_use = as.factor(land_use)
+  )
+
+# ______________________________________________________________________________
+# Land Use Change
+df_change <- 
+  df_landuse_merged |> 
+  rowwise() |> 
+  mutate(
+    land_use_change = classify_land_use_intensity_change(land_use, autut_2),
+    cover_change    = classify_tree_cover_change(csa_1, csa_2),
+    land_use_change = as.factor(land_use_change),
+    cover_change    = as.factor(cover_change)
+  ) 
+
+df_luc_final <- 
+  left_join(
+    df_comb_size,
+    df_change,
+    by = join_by(idp, uta1, uta2, autut_1, autut_2, utip_1, utip_2, csa_1, csa_2)
+  )
+
+# ______________________________________________________________________________
+# Natural Impact 
+# TODO
+
+# ______________________________________________________________________________
+# Human Impact
+df_tmp <-
+  df_luc_final |> 
+  select(idp, prelev5, def5, gest, elag, nlisi5, instp5, andain) |> 
+  distinct() |> 
+  mutate(
+    xxx = ifelse(
+      (is.na(prelev5) &
+        is.na(def5) &
+        is.na(gest) &
+        is.na(elag) &
+        is.na(nlisi5) &
+        is.na(instp5) &
+        is.na(andain)),
+      "drop",
+      "keep"
+    )
+  ) |> 
+  filter(xxx == "keep") |> 
+  select(-xxx)
+
+df_tmp_human <- 
+  df_tmp |> 
+  rowwise() |> 
   mutate(
     tmp = classify_human_activity(prelev5, def5, gest, elag, nlisi5, instp5, andain),
   ) |> 
   unnest(tmp)
+
+df_fin_human <- 
+  left_join(
+    df_luc_final,
+    df_tmp_human,
+    by = join_by(idp, prelev5, def5, gest, elag, nlisi5, instp5, andain)
+  )
+
+# ______________________________________________________________________________
+# Final df
+df_after_apply <- df_fin_human
+```
+
+```{r}
+columns_only_in_new_df <- setdiff(names(df_after_apply), names(df_before_apply))
+columns_only_in_final_df <- setdiff(names(df_before_apply), names(df_after_apply))
+columns_not_in_both <- base::union(columns_only_in_new_df,
+                                   columns_only_in_final_df)
+
+# Print or use the result as needed
+message(
+  "> New variables added to dataset: \n  ",
+  paste0(columns_not_in_both, collapse = ", "))
 ```
 
 ## Filter data
@@ -772,8 +832,7 @@ df_humaninfluence <-
 
 ```{r}
 # Get df_tmp
-# TODO df_tmp <- df_humaninfluence # is not working right now!
-df_tmp <- df_change
+df_tmp <- df_after_apply
 
 df_filtered_sites <- 
   df_tmp |> 
@@ -830,6 +889,24 @@ df_comb_qc <-
 ```
 
 ## Post-Filter QC
+```{r}
+df_tmp <- df_comb_qc
+
+# Turn all character variables into factors
+character_vars <- 
+  df_tmp |> 
+  select_if(is.character) |> 
+  names()
+
+message("> Character variables in the dataset turned into factors:",
+        paste0(character_vars, sep = "\n  ")
+        )
+
+for (var in character_vars) {df_tmp[[var]] <- as.factor(df_tmp[[var]])}
+
+df_factorised <- df_tmp
+```
+
 ## Quality controls
 ```{r}
 # TODO: 
@@ -843,7 +920,7 @@ df_comb_qc <-
 ## Finalize dataset
 ### Select final variables
 ```{r}
-df_tmp <- df_comb_qc
+df_tmp <- df_factorised
 
 nfi_dataset_for_analysis <- 
   df_tmp |> 
