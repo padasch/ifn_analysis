@@ -41,19 +41,29 @@ calculate_growth_mortality <- function(df_in) {
                                    pull(ba_2) |> 
                                    sum()),
       
-      n_mor_yr      = log(n_ini / n_sur) / 5 * 100,
+      # Mortality Esquivel
       n_mor_yr_esq  = (1 - (n_sur / n_ini) ^ (1 / 5)) * 100,
+      
+      # Mortality and Recruitment Hoshino
+      n_mor_yr      = log(n_ini / n_sur) / 5 * 100,
       n_rec_yr      = log(n_fin / n_sur) / 5 * 100,
       
+      # Loss, gain, ingrowth Hoshino
       ba_loss_yr    = log(ba_at_v1_of_alive_trees / ba_at_v1_of_surivors) / 5 * 100,
       ba_gain_yr    = log(ba_at_v2_of_alive_trees / ba_at_v1_of_surivors) / 5 * 100,
       ba_ingr_yr    = log(ba_at_v2_of_survivors   / ba_at_v1_of_surivors) / 5 * 100,
       
-      ba_growth_abs = (ba_at_v2_of_survivors - ba_at_v1_of_surivors) / 5, # m2 tree / hectare / yr
-      ba_loss_abs   = ba_at_v2_of_dead / 5, # m2 tree / hectare / yr
+      # Isolated growth of basal area
+      ba_growth_abs  = (ba_at_v2_of_alive_trees - ba_at_v1_of_surivors) / 5, # m2 tree / hectare / yr
+      ba_growth_rate = ba_growth_abs / (ba_at_v1_of_surivors) * 100, # % rate
       
-      ba_growth_rate = ba_growth_abs / ba_at_v1_of_alive_trees * 100, # % rate
-      ba_loss_rate   = ba_loss_abs   / ba_at_v1_of_alive_trees * 100  # % rate
+      # Isolated loss of basal area
+      ba_loss_abs    = ba_at_v2_of_dead / 5, # m2 tree / hectare / yr
+      ba_loss_rate   = ba_loss_abs   / (ba_at_v2_of_dead + ba_at_v2_of_survivors) * 100,  # % rate
+      
+      # Change in alive basal area
+      ba_change_abs = ba_at_v2_of_alive_trees - ba_at_v1_of_alive_trees / 5,
+      ba_change_rel = ba_change_abs / ba_at_v1_of_alive_trees / 5
     ) 
   
   if ("idp" %in% names(df_in$data[[1]])) {
@@ -67,6 +77,7 @@ calculate_growth_mortality <- function(df_in) {
         n_plots = map_dbl(data, ~ pull(., idp) |> unique() |> length()),
         ba_growth_abs = ba_growth_abs    / n_plots,  
         ba_loss_abs   = ba_loss_abs      / n_plots,
+        ba_change_abs = ba_change_abs    / n_plots,
       )
   }
   
