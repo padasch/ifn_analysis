@@ -21,13 +21,7 @@ df <- nfi_dataset_for_analysis
 all_species <- get_most_common_species(df , "genus") |> head(10)
 all_maptypes <- c("dep", "reg", "ser", "gre")
 all_polys   <- c(10, 15, 20, 25)
-all_metrics <-
-  c("n_mor_yr",
-    "n_mor_yr_esq",
-    "ba_growth_abs",
-    "ba_growth_rate",
-    "ba_loss_abs",
-    "ba_loss_rate")
+all_metrics <- get_available_metrics_of_change()
 
 all_files <- list()
 ```
@@ -41,7 +35,7 @@ for (my_species in all_species$genus_lat) {
     
     for (my_metric in all_metrics) {
       
-      my_p <- create_hexmap_from_aggregated_data(
+      my_p <- create_map_from_aggregated_data(
         selected_var = my_metric,
         df_plot  = df_plot,
         return_or_save = "return",
@@ -56,12 +50,20 @@ for (my_species in all_species$genus_lat) {
         ".jpg"
       )
       
+      my_file_shiny <- paste0(
+        dir_tmp_shiny, "/", 
+        my_species, "-",
+        my_maptype, "-",
+        my_metric,
+        ".jpg"
+      )
+      
       all_files <- append(all_files, my_file)
       
-      ggsave(
-        my_file,
-        my_p
-      )
+      ggsave(my_file,my_p)
+      ggsave(my_file_shiny,my_p)
+      
+      message(paste0("\n> File saved under: "), my_file)
       
     }
     
@@ -76,7 +78,7 @@ for (my_species in all_species$genus_lat) {
     
     for (my_metric in all_metrics) {
       
-      my_p <- create_hexmap_from_aggregated_data(
+      my_p <- create_map_from_aggregated_data(
         selected_var = my_metric,
         df_plot  = df_plot,
         return_or_save = "return",
@@ -91,15 +93,19 @@ for (my_species in all_species$genus_lat) {
         ".jpg"
       )
       
-      all_files <- append(all_files, my_file)
-      
-      ggsave(
-        my_file,
-        my_p
+      my_file_shiny <- paste0(
+        dir_tmp_shiny, "/", 
+        my_species, "-",
+        my_maptype, "-",
+        my_metric,
+        ".jpg"
       )
       
+      all_files <- append(all_files, my_file)
+      
+      ggsave(my_file,my_p)
+      ggsave(my_file_shiny,my_p)
     }
-    
   }
 }
 
