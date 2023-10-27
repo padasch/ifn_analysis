@@ -181,7 +181,7 @@ get_shapefile_france <- function(which_region = NA, n_poly = 15) {
   # st_write(sf_france, filn, quite = TRUE, delete_dsn = TRUE)
   
   # Return
-  message("> CRD of shapefile is: ", st_crs(sf_france)$input)
+  message("> CRS of shapefile is: ", st_crs(sf_france)$input)
   return(sf_france)
     
   # Debug plotting test
