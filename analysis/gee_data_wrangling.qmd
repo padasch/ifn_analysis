@@ -15,7 +15,6 @@ df_xy    <- df |> ungroup() |> select(lon, lat) |> distinct() |> rename(y = lat,
 df_years <- df |> select(campagne_1, campagne_2) |> flatten() |> unlist() |> unique() |> sort()
 ```
 
-
 ## ERA5
 ### Load data
 ```{r}

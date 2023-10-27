@@ -4,24 +4,25 @@ editor_options:
   chunk_output_type: console
 ---
 # Setup
+## {rgee}
 ```{r message=FALSE, warning=FALSE}
-# Source files and packages
-source(here::here("R/_setup.R"))
+library(rgee)
 
-# reticulate::use_condaenv(condaenv = "rgee_py")
-# rgee_environment_dir <-  "/Users/pascal/anaconda3/envs/rgee_py/bin"
-Sys.setenv(RETICULATE_PYTHON = rgee_environment_dir)
-Sys.setenv(EARTHENGINE_PYTHON = rgee_environment_dir)
+# Running the command below requires a restart of R but then rgee should work fine.
+# rgee::ee_install_set_pyenv(
+#   py_path = rgee_environment_dir, # Change it for your own Python PATH
+#   py_env = "rgee_py" # Change it for your own Python ENV
+# )
 
-# Initialize the Python Environment
-# to clean credentials: ee_clean_credentials()
+# ee_clean_user_credentials() # Redo this if KeyError pops up
 rgee::ee_Initialize(drive = T)
-
-# library(rgee)
-# library(stars)
-# library(sf)
-# ee_Initialize(drive = TRUE)
 ```
+
+# Source files and packages
+```{r}
+source(here::here("R/_setup.R"))
+```
+
 
 # Load Data
 ```{r}
@@ -463,69 +464,71 @@ ggplot() +
 
 ## ERA5
 ```{r}
-# REGION OF INTEREST
-# Get France
-sf_france <- get_shapefile_france(outer_border_only = TRUE)
-box_fr    <- st_bbox(sf_france)
+# Region of interest
+roi <- gee_get_france_boundaries()
 
-# Set region of interest
-r_roi <- c(
-  box_fr$xmin,
-  box_fr$ymin,
-  box_fr$xmax,
-  box_fr$ymin,
-  box_fr$xmax,
-  box_fr$ymax,
-  box_fr$xmin,
-  box_fr$ymax,
-  box_fr$xmin,
-  box_fr$ymin
-)
+# Time of interest
+toi <- gee_get_time_of_interest("3months")
 
-roi <-
-  matrix(r_roi, ncol = 2, byrow = TRUE) %>%
-  list() %>%
-  st_polygon() %>%
-  st_sfc() %>%
-  st_set_crs(4326) %>%
-  sf_as_ee()
+# Dataset of interest
+my_data  <- "ECMWF/ERA5_LAND/DAILY"   # ERA5 Daily
+my_data  <- "ECMWF/ERA5_LAND/HOURLY"  # ERA5 Hourly
+my_data  <- "MODIS/061/MOD13A1"       # MODIS Vegetation Index
+my_data  <- "COPERNICUS/S2_HARMONIZED"# Sentinel-2
 
-# roi
+# Functions of interest
+foi <- c("median", "mean", "min", "max")
 ```
 
-```{r}
-# TIME OF INTEREST
-first_year <- "2009"
-last_year  <- "2022"
-
-toi <- seq(as.Date(paste0(first_year, "-12-01")), 
-           as.Date(paste0(last_year,  "-12-01")),
-           by = "3 months")
-toi <- format(toi, "%Y-%m-%d")
-```
 
 ```{r}
-# LOOP VARS
-
-# Set variable
-my_data  <- "ECMWF/ERA5_LAND/HOURLY"
-my_var <- "temperature_2m"
-
-# Other vars
-
+# ERA5
 if (my_data == "ECMWF/ERA5_LAND/HOURLY") {
-  all_vars <- get_era5_vars()
+  voi <- get_era5_vars("hourly")
   my_scale <- 11131.95
 }
+if (my_data == "ECMWF/ERA5_LAND/DAILY") {
+  voi <- get_era5_vars("daily")
+  my_scale <- 11131.95
+}
+
+# MODIS
+# NDVI and EVI
+if (my_data == "MODIS/061/MOD13A1") {
+  voi <- c("NDVI", "EVI")
+  my_scale <- 500
+}
+
+# LST Terra (Aqua will probably not give much more information)
+if (my_data == "MODIS/061/MOD11A1") {
+  voi <- c("LST_Day_1km")
+  my_scale <- 500
+}
+
+# SENTINEL-2
+if (my_data == "COPERNICUS/S2_HARMONIZED") {
+  voi <- c("NDVI", "EVI")
+  toi <- toi[toi >= "2015-06-01"] # Sentinel-2 first data from 2015-06-27
+  my_scale <- 500
+}
+
+# LANDSAT-8
+# TODO: Can also be used to calculate NDVI and EVI!
 ```
 
+```{r}
+# For single runs within the loop:
+# my_data  <- "ECMWF/ERA5_LAND/HOURLY"
+# my_data  <- "ECMWF/ERA5/DAILY"
+# my_var <- "mean_2m_air_temperature"
+```
 
 ```{r}
 # Start loop
 rgee_tasks <- list()
 rgee_filenames <- list()
 c <- 0
-c_tot <- (length(toi)-1) * length(all_vars)
+c_tot <- (length(toi) - 1) * length(voi)
 
 for (i in 2:length(toi) - 1) {
   
@@ -533,59 +536,84 @@ for (i in 2:length(toi) - 1) {
   date_start <- toi[i]
   date_end   <- toi[i + 1]
   
-  # Specify function for aggregation:
-  function_to_apply <- "Mean"
+  for (function_to_apply in foi) {
   
   # Get time of creation
   ctime <- format(Sys.time(), "%Y-%m-%d_%H%M%S")
   
-  for (my_var in all_vars) {
+  for (my_var in voi) {
     
-    # Get filename
-    my_filename <- 
-      paste0(
-          "[", 
-          "created-", ctime , "]-[",
-          "rgee_", str_replace_all(my_data, "/", "-"), "_", my_var, "]-[",
-          "applied_fct-", function_to_apply, "]-[",
-          "", date_start, "_to_", date_end, 
-          "]"
-          )
-    
-    # Define task
-    image <- 
-      ee$
-      ImageCollection(my_data)$
-      select(my_var)$
-      filterBounds(roi)$
-      filterDate(date_start,
-                 date_end)$
-      mean()
-    
-    
-    # Write to drive (nested tasks list to store task object)
-    # Verbose
-    c <- c + 1
-    cat("\n> Submitting job ", c, "/", c_tot)
-    
-    rgee_tasks[[my_var]][i] <- 
-      list(
-        ee_image_to_drive(
-          image = image,
-          fileFormat = "GEO_TIFF",
-          region = roi,
-          scale  = 11131.95,
-          crs    = "EPSG:4326",
-          description = paste0("requested_", c, "_of_", c_tot,"_on_", ctime),
-          folder = "rgee/ifna",
-          fileNamePrefix = my_filename,
-          timePrefix = FALSE
-        )
+      # Get filename
+      my_filename <- 
+        paste0(
+            "[", 
+            "created-", ctime , "]-[",
+            "rgee_", str_replace_all(my_data, "/", "-"), "_", my_var, "]-[",
+            "applied_fct-", function_to_apply, "]-[",
+            "", date_start, "_to_", date_end, 
+            "]"
+            )
+      
+      # ______________________________________________________________________________
+      
+      # TODO Split this section into multiple functions like
+      # - create_era5_task
+      # - create_modis_task
+      # - create_s2_task
+      # - create_l8_tast
+      # - ...
+      
+      
+      image <- gee_get_sentinel_task(
+        roi, 
+        date_start, 
+        date_end, 
+        my_var, 
+        function_to_apply
       )
-
-    # Start task
-    rgee_filenames[[c]] <- my_filename
-    rgee_tasks[[my_var]][[i]]$start()
+      
+      # ______________________________________________________________________________
+      # Define task
+      image <- 
+        ee$
+        ImageCollection(my_data)$
+        select(my_var)$
+        filterBounds(roi)$
+        filterDate(date_start,
+                   date_end)
+      
+      if (function_to_apply == "mean")   image <- image$mean()
+      if (function_to_apply == "median") image <- image$median()
+      if (function_to_apply == "max")    image <- image$max()
+      if (function_to_apply == "min")    image <- image$min()
+      
+      # TODO Resample to 500m if given at coarser resolution
+      
+      # ______________________________________________________________________________
+      # Write to drive (nested tasks list to store task object)
+      # Verbose
+      c <- c + 1
+      cat("\n> Submitting job ", c, "/", c_tot)
+      
+      rgee_tasks[[my_var]][i] <- 
+        list(
+          ee_image_to_drive(
+            image = image,
+            fileFormat = "GEO_TIFF",
+            region = roi,
+            scale  = my_scale,
+            crs    = "EPSG:4326",
+            description = paste0("requested_", c, "_of_", c_tot,"_on_", ctime),
+            folder = paste0("rgee/ifna/", format(Sys.time(), "%Y-%m-%d")),
+            fileNamePrefix = my_filename,
+            timePrefix = FALSE
+          )
+        )
+  
+      # Start task
+      rgee_filenames[[c]] <- my_filename
+      rgee_tasks[[my_var]][[i]]$start()
+  }
   }
 }
 
@@ -602,7 +630,7 @@ c <- 0
     
 for (i in 2:length(toi) - 1) {
   
-  for (my_var in all_vars) {
+  for (my_var in voi) {
     
     c <- c + 1
     cat("\n> Saving file ", c, "/", c_tot)
