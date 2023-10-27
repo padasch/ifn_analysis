@@ -1,4 +1,4 @@
-create_hexmap_from_aggregated_data <- function(
+create_map_from_aggregated_data <- function(
     selected_var = NULL,
     df_plot  = NULL,
     return_or_save = "return",
