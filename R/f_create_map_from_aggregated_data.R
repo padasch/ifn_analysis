@@ -1,4 +1,4 @@
-create_hexmap_from_aggregated_data <- function(
+create_map_from_aggregated_data <- function(
     selected_var = NULL,
     df_plot  = NULL,
     return_or_save = "return",
@@ -9,16 +9,11 @@ create_hexmap_from_aggregated_data <- function(
   # ______________________________________________________________________________
   # selected_var:
   # - Variable to be plotted, must be of the one's returned from empty function call
+  avail_vars <- get_available_metrics_of_change()
+  
   if (is.null(selected_var)) {
-    stop("Variables that can be selected: \n" ,
-         " [n_mor_yr] returns %-stem based mortality per year following Hoshino et al. 2002\n",
-         " [n_mor_yr_esq] returns %-stem based mortality per year following Esquivel et al. 2020\n",
-         " [ba_growth_abs] returns absolute BA growth in m^2 / hectare / yr \n",
-         " [ba_growth_rate] returns relative BA growth in % \n",
-         " [ba_loss_abs] returns absolute BA loss in m^2 / hectare / yr \n",
-         " [ba_loss_rate] returns relative BA loss in % \n"
-         )
-  } else if (!is.character(selected_var)) {stop("selected_var input is wrong")}
+    stop("Variables that can be selected: \n" , paste0(avail_vars, collapse = "\n  "))
+  } else if (!(selected_var %in% avail_vars)) {stop("selected_var input is wrong")}
   
   # df_plot:
   # - tibble with hexagon (or other) geometry
@@ -64,60 +59,68 @@ create_hexmap_from_aggregated_data <- function(
     my_title <- paste0("Mortality of ", selected_species, "\n")
   }
   
-  ## MORTALITY - Basal Area ----
-  if (selected_var == "ba_loss_abs") {
-    legend_txt <- expression(paste("\nTree Mortality [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
-    breaks     <- c(-Inf, 1, 2, 3, 4, 5, Inf)
-    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)]),
-                    paste0("≥", breaks[(length(breaks) - 1)]))
-    palette_txt <- "Reds"
-    caption_txt <- "\nMortality = [BA of trees that died between census] / 5"
-    my_title <- paste0("Mortality of ", selected_species, "\n")
-  }
-  
-  if (selected_var == "ba_loss_rate") {
-    legend_txt <- expression(paste("\nTree Mortality Rate [%-basal area ",yr ^ -1, "]"))
-    breaks     <- c(-Inf, 0.25, 0.5, 1.75, 1, 1.25, Inf)
-    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
-                    paste0("≥", breaks[(length(breaks) - 1)], "%"))
-    palette_txt <- "Reds"
-    caption_txt <- "\nMortality = [BA of trees that died between census] / [BA of all alive trees at 1st visit] / 5"
-    my_title <- paste0("Mortality of ", selected_species, "\n")
-  }
-  
-  ## GROWTH - Basal Area ----
-  if (selected_var == "ba_growth_abs") {
-    legend_txt <- expression(paste("\nTree Growth [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
-    breaks     <- c(-Inf, 5, 10, 15, 20, 25, Inf)
-    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)]),
-                    paste0("≥", breaks[(length(breaks) - 1)]))
-    palette_txt <- "Greens"
-    caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / 5"
-    my_title <- paste0("Growth of ", selected_species, "\n")
-  }
-  
-  if (selected_var == "ba_growth_rate") {
-    legend_txt <- expression(paste("\nTree Growth Rate [%-basal area ",yr ^ -1, "]"))
-    breaks     <- c(-Inf, 0.5, 1, 1.5, 2, 2.5, 3, Inf)
-    breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
-                    paste0("≥", breaks[(length(breaks) - 1)], "%"))
-    palette_txt <- "Greens"
-    caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / ([BA of survivors at 1st visit]) 5"
-    my_title <- paste0("Growth of ", selected_species, "\n")
-  }
+  # ## MORTALITY - Basal Area ----
+  # if (selected_var == "ba_loss_abs") {
+  #   legend_txt <- expression(paste("\nTree Mortality [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
+  #   breaks     <- c(-Inf, 1, 2, 3, 4, 5, Inf)
+  #   breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)]),
+  #                   paste0("≥", breaks[(length(breaks) - 1)]))
+  #   palette_txt <- "Reds"
+  #   caption_txt <- "\nMortality = [BA of trees that died between census] / 5"
+  #   my_title <- paste0("Mortality of ", selected_species, "\n")
+  # }
+  # 
+  # if (selected_var == "ba_loss_rate") {
+  #   legend_txt <- expression(paste("\nTree Mortality Rate [%-basal area ",yr ^ -1, "]"))
+  #   breaks     <- c(-Inf, 0.25, 0.5, 1.75, 1, 1.25, Inf)
+  #   breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+  #                   paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  #   palette_txt <- "Reds"
+  #   caption_txt <- "\nMortality = [BA of trees that died between census] / [BA of all alive trees at 1st visit] / 5"
+  #   my_title <- paste0("Mortality of ", selected_species, "\n")
+  # }
+  # 
+  # ## GROWTH - Basal Area ----
+  # if (selected_var == "ba_growth_abs") {
+  #   legend_txt <- expression(paste("\nTree Growth [", m ^ 2 ~ hectare ^ -1 ~ yr ^ -1, "]"))
+  #   breaks     <- c(-Inf, 5, 10, 15, 20, 25, Inf)
+  #   breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)]),
+  #                   paste0("≥", breaks[(length(breaks) - 1)]))
+  #   palette_txt <- "Greens"
+  #   caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / 5"
+  #   my_title <- paste0("Growth of ", selected_species, "\n")
+  # }
+  # 
+  # if (selected_var == "ba_growth_rate") {
+  #   legend_txt <- expression(paste("\nTree Growth Rate [%-basal area ",yr ^ -1, "]"))
+  #   breaks     <- c(-Inf, 0.5, 1, 1.5, 2, 2.5, 3, Inf)
+  #   breaks_txt <- c(paste0("<", breaks[2:(length(breaks) - 1)], "%"),
+  #                   paste0("≥", breaks[(length(breaks) - 1)], "%"))
+  #   palette_txt <- "Greens"
+  #   caption_txt <- "\nGrowth = ([BA of survivors at 2nd visit] - [BA of survivors at 1st visit]) / ([BA of survivors at 1st visit]) 5"
+  #   my_title <- paste0("Growth of ", selected_species, "\n")
+  # }
   
   # Turn variable into classes ----
-  df_plot <-
-    df_plot |>
-    mutate(clss =
-             cut(get(selected_var),
-                 breaks = breaks,
-                 labels = breaks_txt,
-                 include.lowest = TRUE)
-    )
+  # df_plot <-
+  #   df_plot |>
+  #   mutate(clss =
+  #            cut(get(selected_var),
+  #                breaks = breaks,
+  #                labels = breaks_txt,
+  #                include.lowest = TRUE)
+  #   )
   
   # DEBUG to overwrite classes and keep numerical values!
   df_plot <- df_plot |> mutate(clss = get(selected_var))
+  
+  # Get labls
+  gg_labels <- get_ggplot_labs(selected_var)
+  my_title    <- gg_labels$title
+  caption_txt <- gg_labels$caption
+  palette_txt <- gg_labels$colors
+  legend_txt  <- gg_labels$axis
+  my_subtitle <- paste0("Data for ", selected_species, "\n")
   
   # Set custom theme ----
   my_theme <-
@@ -129,6 +132,10 @@ create_hexmap_from_aggregated_data <- function(
         element_text(
           hjust = 0.5,
           face = "bold"
+        ),
+      plot.subtitle = 
+        element_text(
+          hjust = 0.5
         ),
       legend.position = "bottom",
       legend.title = element_text(
@@ -187,7 +194,9 @@ create_hexmap_from_aggregated_data <- function(
     # guides(fill   = guide_legend(guide = "colourbar", title.position = "top"),
            # color  = "none") +
     labs(title = my_title,
-         caption = caption_txt) +
+         subtitle = my_subtitle,
+         caption = caption_txt
+         ) +
     my_theme
   
   # Return or save plot ----
