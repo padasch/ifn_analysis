@@ -3,7 +3,9 @@ output: html_document
 editor_options: 
   chunk_output_type: console
 ---
+
 # Setup
+
 ```{r message=FALSE, warning=FALSE}
 # Source files and packages
 source(here::here("R/_setup.R"))
@@ -13,12 +15,14 @@ source(here::here("R/_setup.R"))
 ```
 
 ## Load Data
+
 ```{r}
 load_or_save_latest_file(nfi_dataset_for_analysis, "load")
 load_or_save_latest_file(era5_predictor_dataset, "load")
 ```
 
 ## Settings
+
 ```{r}
 rf_set <- list()
 # Entries filtering
@@ -30,8 +34,8 @@ rf_set$only_proper_trees <- TRUE
 rf_set$max_na_percentage       <- 20
 ```
 
-
 ## Global Vars
+
 ```{r}
 # Inputs
 my_species        <- "Quercus"
@@ -61,13 +65,16 @@ drop_targets <- all_targets[all_targets != my_target]
 ```
 
 # Create Dataset
+
 ## Filter for species
+
 ```{r}
 df_tmp     <- nfi_dataset_for_analysis
 df_species <- df_tmp |> filter(genus_lat == my_species)
 ```
 
 ## Aggregate NFI
+
 ```{r}
 # To calculate growth and mortality, we need to aggregate the NFI data on any given level
 message("> Aggregating data takes time...")
@@ -84,13 +91,14 @@ beep(2)
 ```
 
 ## Filter
+
 ```{r}
 # Filter out all plots that showed no growth and no mortality
 df_aggregated <- df_aggregated |> filter(ba_loss_abs != 0)
 ```
 
-
 ## Merge
+
 ```{r}
 df_tmp <- df_aggregated
 
@@ -118,6 +126,7 @@ df_merged <- df_tmp
 ```
 
 ## Drop useless variables
+
 ```{r}
 # Drop vars by hand that are of no use for the model
 useless_vars <- 
@@ -154,6 +163,7 @@ df_drop_uselees <- df_merged |> select(-any_of(useless_vars))
 ```
 
 ## Drop factors
+
 ```{r}
 df_tmp <- df_drop_uselees
 
@@ -165,6 +175,7 @@ df_drop_factors <- df_tmp |> select(-any_of(vars_less_two_levels))  # Drop vars
 ```
 
 ## Drop NAs
+
 ```{r}
 df_tmp <- df_drop_factors
 
@@ -182,21 +193,27 @@ df_drop_na <- df_tmp |> select(-any_of(vars_above_threshold))
 ```
 
 ## Drop other targets
+
 ```{r}
 df_tmp <- df_drop_na
 df_drop_targets <- df_tmp |> select(-any_of(drop_targets))
 ```
 
 # Data Inspection
+
 ## Data Missingness
+
 ```{r, eval=FALSE}
 df_tmp <- df_drop_targets
 
-visdat::vis_miss(df_tmp |> slice_sample(n = 10000),
-                 sort_miss = TRUE)
+visdat::vis_miss(
+  df_tmp[,1:20] |> 
+    slice_sample(n = 1000),
+  sort_miss = TRUE)
 ```
 
 # Data Splitting
+
 ```{r}
 df_tmp <- df_drop_targets
 
@@ -221,6 +238,7 @@ my_formula <- as.formula(paste(my_target, "~ ."))
 ```
 
 # Run Model
+
 ```{r}
 do_parallel <- FALSE
 
@@ -251,6 +269,7 @@ beep()
 ```
 
 # Model Evaluation
+
 ```{r}
 # Need to load {ranger} because ranger-object is used in predict()
 library(ranger) 
@@ -321,6 +340,7 @@ p_modobs <-
 ```
 
 # Model Interpretation
+
 ```{r}
 do_parallel <- FALSE
 
@@ -363,8 +383,8 @@ all_models[[my_modelname]] <- list(name = my_modelname,
 all_models[[my_modelname]]
 ```
 
+# -- NEW
 
-# -- NEW 
 ```{r}
 library(caret)
 library(randomForest)
@@ -423,4 +443,3 @@ run_rf <- function(data, species = NULL, height_class = NULL) {
 ```{r}
 run_rf
 ```
-
