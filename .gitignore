@@ -12,3 +12,6 @@ figures
 qgis-project
 R/_backgroundjobs.R
 *.rds
+*.feather
+*.pyc
+*.csv
