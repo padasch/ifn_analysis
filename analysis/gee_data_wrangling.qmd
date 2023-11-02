@@ -7,12 +7,6 @@ editor_options:
 ## Setup
 ```{r}
 source(here::here("R/_setup.R"))
-load_or_save_latest_file(nfi_dataset_for_analysis, "load")
-df       <- nfi_dataset_for_analysis
-
-dir_rgee <- here("data/raw/gee/")
-df_xy    <- df |> ungroup() |> select(lon, lat) |> distinct() |> rename(y = lat, x = lon)
-df_years <- df |> select(campagne_1, campagne_2) |> flatten() |> unlist() |> unique() |> sort()
 ```
 
 ## ERA5
@@ -90,5 +84,243 @@ load_or_save_latest_file(era5_predictor_dataset, "save")
 # vars_era5 <- get_era5_vars()
 # 
 # df_tmp <- df_preds |> select(contains(vars_era5), ba_change_abs_yr, lat, lon)
+```
+
+## New approach 2023-10-30
+
+```{r}
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+df_raw <- nfi_dataset_for_analysis
+```
+
+```{r}
+dir_rgee <- here("data/raw/gee/")
+df_xy_yr    <- 
+  df_raw |> 
+  ungroup() |> 
+  select(lon, lat, campagne_1) |> 
+  distinct() |> 
+  rename(y = lat, x = lon) |> 
+  mutate(campagne_1 = as.double(as.character(campagne_1))) |> 
+  filter(campagne_1 > 2009)
+```
+
+```{r}
+all_files <- list.files(here("data/raw/gee/2023-10-30"))
+# 3 months intervals
+all_seas <- c("12-01_to", "03-01_to", "06-01_to", "09-01_to") 
+date_seas <- list("12-01_to" = "win",
+                  "03-01_to" = "spr",
+                  "06-01_to" = "sum",
+                  "09-01_to" = "fal")
+
+# 6 months intervals
+all_seas <- c("09-01_to", "03-01_to")
+date_seas <- list("09-01_to" = "win", "03-01_to" = "sum")
+
+all_fct <- c("mean", "min", "max")
+
+yrs_before <- 1
+yrs_after  <- 5
+yrs_min    <- min(df_xy_yr$campagne_1)
+yrs_max    <- max(df_xy_yr$campagne_1)
+all_years  <- (yrs_min - yrs_before) : (yrs_max + yrs_after)
+```
+
+```{r}
+# Get all ERA5 DAILY vars
+pattern_var <- "Y_(.*?)]-\\[applied"
+all_vars    <- str_extract(all_files, pattern_var)
+all_vars    <- str_remove(all_vars, "Y_")
+all_vars    <- str_remove(all_vars, "\\]-\\[applied") |> unique()
+
+# Create large dataframe to loop and filter
+all_combinations <-
+  expand.grid(
+    vars  = all_vars,
+    seas  = all_seas,
+    year1 = all_years,
+    fct   = all_fct
+    ) |> 
+  as_tibble() |> 
+  mutate(
+    across(everything(), as.character),
+    year1 = as.double(year1),
+    # per      = paste0("to_", campagne_2),
+    var_name = paste0(vars, "_", date_seas[seas])
+    )
+
+subset_combinations <- 
+  all_combinations |>
+  filter(
+    fct == "mean"
+    ) |> 
+  drop_na(vars)
+```
+
+```{r}
+
+```
+
+```{r}
+df_all <- df_xy_yr
+# df_all <- tibble()
+
+for (i in 1:nrow(subset_combinations)) {
+  
+  # Reduce to files with the same variable
+  same_var <- all_files[str_detect(all_files, subset_combinations$vars[i])]
+  
+  # Reduce to files with the same time
+  same_interval  <- same_var[str_detect(same_var, subset_combinations$seas[i])]
+  
+  # Reduce to files with the same function
+  same_fct  <- same_interval[str_detect(same_interval, subset_combinations$fct[i])]
+  
+  # Reduce to same period (all periods from 5 year interval)
+  all_pers  <- paste0("\\[", paste0((subset_combinations$year1[i]:(subset_combinations$year1[i] + 5))))
+  same_per  <- str_subset(same_fct, paste(all_pers, collapse = "|"))
+  
+  if (length(same_per) == 0) {next()}
+  
+  raster_stack <- terra::rast(here("data/raw/gee/2023-10-30", same_per))
+  raster_mean  <- mean(raster_stack)
+  raster_sd    <- stdev(raster_stack)
+  
+  varname_mean <- paste0(subset_combinations$var_name[i], "_mean")
+  varname_sd <- paste0(subset_combinations$var_name[i], "_sd")
+  
+  # names(raster_mean) <- varname_mean
+  # names(raster_sd)   <- varname_sd
+  
+  xy_mean <- 
+    terra::extract(
+      raster_mean,    # The raster we want to extract from
+      df_xy,        # A matrix of x and y values to extract for
+      ID = FALSE    # To not add a default ID column to the output
+    )
+  
+  xy_sd <- 
+    terra::extract(
+      raster_sd,    # The raster we want to extract from
+      df_xy,        # A matrix of x and y values to extract for
+      ID = FALSE    # To not add a default ID column to the output
+    )
+  
+  df_loop <- cbind(df_xy, xy_mean, xy_sd) |> tibble()
+  df_loop[[varname_mean]] <- df_loop$mean
+  df_loop[[varname_sd]]   <- df_loop$std
+  
+  df_loop <- 
+    df_loop |> 
+    select(-mean, -std) |> 
+    mutate(campagne_1 = subset_combinations$year1[i])
+  
+  df_all <- left_join(df_all, df_loop)
+}
+```
+
+```{r}
+df_wide <- df_all |> pivot_wider(names_from = name, values_from = value)
+df_wide
+```
+
+```{r}
+df_all <- df_xy_yr
+df_all <- tibble()
+
+for (i in 1:nrow(df_xy_yr)) {
+  cat(paste0("\n> Working on ", i, "/", nrow(df_xy_yr)))
+  
+  # Loop over vars
+  df_loop_var <- df_xy_yr |> slice(i)
+  for (my_var in all_vars) {
+    # Reduce to files with the same variable
+    same_var <- all_files[str_detect(all_files, my_var)]
+    
+    # Loop over function (short-cut for now)
+    # Reduce to files with the same function
+    my_fct <- "mean"
+    same_fct  <- same_var[str_detect(same_var, my_fct)]
+    
+    # Loop over seasons
+    df_loop_season <- df_xy_yr |> slice(i)
+    for (my_seas in all_seas) {
+      # Reduce to files from the same season
+      same_season <- same_fct[str_detect(same_fct, my_seas)]
+      
+      # Reduce to same period (all periods from 5 year interval)
+      my_year  <- df_loop_season$campagne_1 |> as.numeric()
+      my_years <- paste0("to_", paste0((my_year:(my_year + 5))))
+      same_per <- str_subset(same_season, paste(my_interval, collapse = "|"))
+      
+      if (length(same_per) == 0) {next()}
+      
+      raster_stack <- terra::rast(here("data/raw/gee/2023-10-30", same_per))
+      raster_mean  <- mean(raster_stack)
+      raster_sd    <- stdev(raster_stack)
+      
+      varname_mean <- paste0(my_var, "_", date_seas[[my_seas]], "_mean")
+      varname_sd   <- paste0(my_var, "_", date_seas[[my_seas]], "_sd")
+      
+      # names(raster_mean) <- varname_mean
+      # names(raster_sd)   <- varname_sd
+      xy_loop <- df_loop_season |> select(x, y)
+      
+      xy_mean <- 
+        terra::extract(
+          raster_mean,    # The raster we want to extract from
+          xy_loop,        # A matrix of x and y values to extract for
+          ID = FALSE    # To not add a default ID column to the output
+        )
+      
+      xy_sd <- 
+        terra::extract(
+          raster_sd,    # The raster we want to extract from
+          xy_loop,        # A matrix of x and y values to extract for
+          ID = FALSE    # To not add a default ID column to the output
+        )
+      
+      df_loop <- cbind(xy_loop, xy_mean, xy_sd) |> tibble()
+      df_loop[[varname_mean]] <- df_loop$mean
+      df_loop[[varname_sd]]   <- df_loop$std
+      
+      df_loop <- 
+        df_loop |> 
+        select(-mean, -std) |> 
+        mutate(campagne_1 = df_loop_season$campagne_1)
+      
+      df_loop_season <- left_join(df_loop_season, df_loop, by = join_by(x, y, campagne_1))
+    } # End season loop
+    df_loop_var <- left_join(df_loop_var, df_loop_season, by = join_by(x, y, campagne_1))
+  } # End var loop
+  
+  df_all <- bind_rows(df_all, df_loop_var)
+}
+  
+df_era5_predictors_incomplete <- df_all
+load_or_save_latest_file(df_era5_predictors_incomplete)
+```
+
+```{r}
+df_xy_id <-  df_xy |> mutate(id = row_number())
+
+df_xy_sf <- 
+  df_xy_id |> 
+  sf::st_as_sf(coords = c("x", "y")) |> 
+  sf::st_set_crs("WGS84") |> 
+  left_join(df_xy_id)
+
+df_xy_yr <- df_xy_yr |> mutate(id = row_number())
+
+df_xy_yr_sf <- 
+  df_xy_yr |> 
+  sf::st_as_sf(coords = c("x", "y")) |> 
+  sf::st_set_crs("WGS84") |> 
+  left_join(df_xy_yr) |> 
+  rename(first_visit = campagne_1)
+
+sf::st_write(df_xy_sf, here("data/tmp/all_locations.csv"))
+sf::st_write(df_xy_yr_sf, here("data/tmp/locations_year.csv"))
 ```
 

@@ -626,3 +626,66 @@ load_or_save_latest_file(nfi_dataset_raw, "save")
 filter_raw_nfi_data() # does: load_or_save_latest_file(nfi_dataset_for_analysis, "save")
 ```
 
+# Visuals
+```{r}
+# Code adapted from: 
+# https://stackoverflow.com/questions/35921590/leaflet-on-r-how-to-create-layers-and-colors-for-each-factor-level-in-dataframe
+
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+df <- 
+  nfi_dataset_for_analysis |>
+  mutate(campagne_1 = as.double(as.character(campagne_1))) |> 
+  filter(campagne_1 > 2009) |> 
+  select(lat, lon, campagne_1) |> 
+  distinct()
+
+groups     <-  as.character(unique(df$campagne_1))
+groups_col <-  colorFactor(palette = "viridis", domain = df$campagne_1)
+
+map <- 
+  leaflet(df) |> 
+  addProviderTiles(
+    providers$Esri.WorldImagery,
+    group = "World Imagery") |>
+  addProviderTiles(
+    providers$Esri.WorldTopoMap, 
+    group = "World Topo")
+
+for (g in groups){
+  df_i <-  df |> filter(campagne_1 == g)
+  
+  map <- 
+    map |> 
+    addCircleMarkers(
+      data = df_i, 
+      lng = ~lon, 
+      lat = ~lat, 
+      color = ~groups_col(campagne_1),
+      group = g, 
+      label = ~paste("Status: ", campagne_1),
+      opacity = 0.9)
+}
+
+map |> 
+  addLayersControl(
+    overlayGroups = groups,
+    baseGroups = c("World Imagery", "World Topo"),
+    position = "topleft",
+    options = layersControlOptions(collapsed = FALSE)) |> 
+  # addRectangles(
+  #   lng1 = l_subreg$min_lon, 
+  #   lat1 = l_subreg$min_lat,
+  #   lng2 = l_subreg$max_lon, 
+  #   lat2 = l_subreg$max_lat,
+  #   color = "black",
+  #   fillColor = "transparent",
+  #   opacity = 1
+  # ) |> 
+  addLegend(
+    pal = groups_col,
+    values = groups,
+    title = "First Visit",
+    position = "topleft") |> 
+  addScaleBar()
+```
+

@@ -90,6 +90,9 @@ filter_raw_nfi_data <- function(
       !is.na(lon),
     )
   
+  # Keep only sites measured first in 2010 for simplicity reasons
+  df_tmp <- df_tmp |> filter(campagne_1 > 2009)
+  
   # ______________________________________________________________________________
   # Keep only suitable trees
   # *Decisions*

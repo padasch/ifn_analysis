@@ -6,9 +6,9 @@ get_era5_vars <- function(subset){
     out <- 
       c(
         # "dewpoint_temperature_2m"
-        "temperature_2m"
-        ,"skin_temperature"
-        ,"soil_temperature_level_1"
+        # "temperature_2m"
+        # ,"skin_temperature"
+        # ,"soil_temperature_level_1"
         # ,"soil_temperature_level_2"
         # ,"soil_temperature_level_3"
         # ,"soil_temperature_level_4"
@@ -43,18 +43,18 @@ get_era5_vars <- function(subset){
         # ,"evaporation_from_open_water_surfaces_excluding_oceans"
         # ,"evaporation_from_the_top_of_canopy"
         # ,"evaporation_from_vegetation_transpiration"
-        ,"potential_evaporation"
+        # ,"potential_evaporation"
         # ,"runoff"
         # ,"snow_evaporation"
         # ,"sub_surface_runoff"
         # ,"surface_runoff"
-        ,"total_evaporation"
+        "total_evaporation"
         # ,"u_component_of_wind_10m"
         # ,"v_component_of_wind_10m"
-        ,"surface_pressure"
+        # ,"surface_pressure"
         ,"total_precipitation"
-        ,"leaf_area_index_high_vegetation"
-        ,"leaf_area_index_low_vegetation"
+        # ,"leaf_area_index_high_vegetation"
+        # ,"leaf_area_index_low_vegetation"
         # ,"snowfall_hourly"
         # ,"snowmelt_hourly"
         # ,"surface_latent_heat_flux_hourly"
@@ -80,15 +80,15 @@ get_era5_vars <- function(subset){
     
     out <- 
       c(
-        "mean_2m_air_temperature",
-        "minimum_2m_air_temperature",
-        "maximum_2m_air_temperature",
-        "dewpoint_2m_temperature",
-        "total_precipitation",
-        "surface_pressure",
-        "mean_sea_level_pressure",
-        "u_component_of_wind_10m",
-        "v_component_of_wind_10m"
+        "mean_2m_air_temperature" 
+        ,"minimum_2m_air_temperature" 
+        ,"maximum_2m_air_temperature" 
+        # ,"dewpoint_2m_temperature" 
+        # ,"total_precipitation" 
+        # ,"surface_pressure" 
+        # ,"mean_sea_level_pressure" 
+        # ,"u_component_of_wind_10m" 
+        # ,"v_component_of_wind_10m" 
       )
     } else {
     stop("Wrong subset selection.")

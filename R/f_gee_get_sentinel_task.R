@@ -46,9 +46,9 @@ gee_get_sentinel_task <- function(
     EVI <- image$expression(
       '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
       list(
-        'NIR' = image$select('B8'), 
-        'RED' = image$select('B4'),
-        'BLUE'= image$select('B2')
+        'NIR'  = image$select('B8'), 
+        'RED'  = image$select('B4'),
+        'BLUE' = image$select('B2')
       ))$rename("EVI")
     
     image <- image$addBands(EVI)
@@ -60,14 +60,14 @@ gee_get_sentinel_task <- function(
   getNDVI <- function(image){
     # Compute the NDVI using an expression.
     # No need to divide by 10^5 again, because is done in cloud masking!
-    EVI <- image$expression(
+    NDVI <- image$expression(
       '(NIR - RED) / (NIR + RED)',
       list(
         'NIR' = image$select('B8'),
         'RED' = image$select('B4')
       ))$rename("NDVI")
     
-    image <- image$addBands(EVI)
+    image <- image$addBands(NDVI)
     
     return(image)
   }
@@ -84,7 +84,7 @@ gee_get_sentinel_task <- function(
   #   For some reason, people online prefer median instead of mean
   # - Clip to roi (not really sure what this does)
   
-  sentinel  <- 
+  image  <- 
     ee$
     ImageCollection('COPERNICUS/S2_HARMONIZED')$
     filterDate(date_start, date_end)$
@@ -95,7 +95,7 @@ gee_get_sentinel_task <- function(
     map(getEVI)$
     map(getNDVI)
   
-  image_fct <- gee_apply_function_to_img(image = sentinel, which_fct  = function_to_apply)
+  image_fct <- gee_apply_function_to_img(image = image, which_fct  = function_to_apply)
   image_cli <- image_fct$clip(roi)
   
   # ______________________________________________________________________________

@@ -15,3 +15,4 @@ R/_backgroundjobs.R
 *.feather
 *.pyc
 *.csv
+ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
