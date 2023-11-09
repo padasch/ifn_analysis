@@ -51,6 +51,17 @@ load_or_save_latest_file <- function(data_variable, action = "load") {
     # Save the object to an RDS file
     saveRDS(get(data_variable_name, envir = .GlobalEnv), file = rds_file_name)
     
+    csv_file_name <- 
+      file.path(
+        tmp_dir, 
+        paste0(
+          formatted_datetime, "_", 
+          data_variable_name,
+          ".csv"))
+    
+    # Save the object to an RDS file
+    write.csv(get(data_variable_name, envir = .GlobalEnv), file = csv_file_name)
+    
     # Display the saved file name and time
     cat("Data saved to file:", rds_file_name, "\n")
   } else {
