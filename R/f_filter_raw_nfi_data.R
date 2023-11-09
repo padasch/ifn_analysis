@@ -25,7 +25,7 @@ filter_raw_nfi_data <- function(
   tic() 
   df_tmp <- 
     df_tmp |> 
-    select(idp, ba_1, tree_state_change, genus_lat, tree_class) |> 
+    dplyr::select(idp, ba_1, tree_state_change, genus_lat, tree_class) |> 
     filter(tree_state_change %in% c("alive_alive", "alive_dead", "alive_cut")) |> 
     nest(data = -idp) |> 
     # slice(1:20) |> 
@@ -61,7 +61,7 @@ filter_raw_nfi_data <- function(
            ),
            .progress = TRUE
          )) |> 
-    select(-data, -tot) |> 
+    dplyr::select(-data, -tot) |> 
     right_join(df_tmp, by = join_by(idp))
   toc()
   
@@ -91,7 +91,11 @@ filter_raw_nfi_data <- function(
     )
   
   # Keep only sites measured first in 2010 for simplicity reasons
-  df_tmp <- df_tmp |> filter(campagne_1 > 2009)
+  df_tmp <-
+    df_tmp |>
+    mutate(campagne_1 = as.numeric(as.character(campagne_1))) |> 
+    filter(campagne_1 > 2009) |> 
+    mutate(campagne_1 = as.factor(campagne_1))
   
   # ______________________________________________________________________________
   # Keep only suitable trees
@@ -107,7 +111,6 @@ filter_raw_nfi_data <- function(
   df_tmp <- 
     df_tmp |>
     filter(
-      as.numeric(campagne_1) > 2009,
       tree_state_change %in% c("alive_alive", "alive_dead", "new_alive"),
       cible %in% c(1) # NA is omitted
     ) 
@@ -115,4 +118,6 @@ filter_raw_nfi_data <- function(
   nfi_dataset_for_analysis <- df_tmp 
   load_or_save_latest_file(nfi_dataset_for_analysis, "save")
   message("\n  ... Done! Saved nfi_dataset_for_analysis.")
+  
+  return(nfi_dataset_for_analysis)
 }
