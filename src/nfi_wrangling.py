@@ -3,12 +3,13 @@ import numpy as np
 import os
 
 
-def calculate_growth_mortality(df_in, verbose=False):
-    # nesting_vars = df_in.drop(columns=["data"]).columns
-    site_id = df_in["idp"].unique()[0]
+def calculate_growth_mortality(df_in, verbose=False, divide_by_nplots=False):
+
+    idp = df_in["idp"].unique()[0]
+    
     if verbose:
         print(
-            f"> calculate_growth_mortality():\n  Calculating growth and mortality for site {site_id}."
+            f"> calculate_growth_mortality():\n  Calculating growth and mortality for site {idp}."
         )
 
     n_ini = df_in.shape[0]
@@ -66,10 +67,10 @@ def calculate_growth_mortality(df_in, verbose=False):
     ba_change_abs = ba_at_v2_of_alive_trees - ba_at_v1_of_alive_trees / 5
     ba_change_rel = ba_change_abs / ba_at_v1_of_alive_trees / 5
 
-    if "idp" in df_in.columns:
+    if divide_by_nplots:
         if verbose:
             print(
-                f"> calculate_growth_mortality():\n  idp detected in columns, so dividing absolute rates by number of plots."
+                f"\n  Dividing absolute changes by number of plots per grouping variable."
             )
 
         n_plots = df_in["idp"].nunique()
@@ -81,7 +82,7 @@ def calculate_growth_mortality(df_in, verbose=False):
 
     df_out = pd.DataFrame(
         {
-            "idp": site_id,
+            "idp": idp,
             "n_ini": n_ini,
             "n_sur": n_sur,
             "n_fin": n_fin,
@@ -90,6 +91,9 @@ def calculate_growth_mortality(df_in, verbose=False):
             "ba_at_v1_of_survivors": ba_at_v1_of_survivors,
             "ba_at_v2_of_survivors": ba_at_v2_of_survivors,
             "ba_at_v2_of_dead": ba_at_v2_of_dead,
+            "n_mor_yr_esq" : n_mor_yr_esq,
+            "n_mor_yr" : n_mor_yr,
+            "n_rec_yr" : n_rec_yr,
             "ba_loss_yr": ba_loss_yr,
             "ba_gain_yr": ba_gain_yr,
             "ba_ingr_yr": ba_ingr_yr,

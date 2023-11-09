@@ -5,7 +5,7 @@ import datetime
 from warnings import warn
 
 
-def load_and_merge_files(site_id, first_year, subdir, verbose=True):
+def load_and_merge_files(SiteID, first_year, subdir, verbose=True):
     """
     Load all data from subdirectory with format site_*.feather and merge into one dataframe.
 
@@ -19,7 +19,7 @@ def load_and_merge_files(site_id, first_year, subdir, verbose=True):
     # Specify the folder path and file extension
     folder_path = "../01_download_raw_gee_data/gee-raw-data/" + subdir + "/*"
     file_extension = (
-        "site_" + str(site_id) + ".feather"
+        "site_" + str(SiteID) + ".feather"
     )  # Change this to desired file extension
 
     if verbose:
@@ -38,7 +38,7 @@ def load_and_merge_files(site_id, first_year, subdir, verbose=True):
             df_out = pd.merge(df_out, df, on=["date", "SiteID"])
 
         # Attach site ID and first year
-        df_out["SiteID"] = site_id
+        df_out["SiteID"] = SiteID
         df_out["first_year"] = first_year
 
         return df_out
@@ -66,8 +66,8 @@ def load_and_wrangle_PARALLEL(
 
     # ----------------------------------------------------------------------------------------
     # Fix inputs
-    site_id = my_group["id"].iloc[0]
-    first_year = my_group["first_visit"].iloc[0]
+    SiteID = my_group["id"].iloc[0]
+    first_year = my_group["first_year"].iloc[0]
     return_empty_df = pd.DataFrame(columns=["SiteID", "first_year"])
 
     # ----------------------------------------------------------------------------------------
@@ -79,7 +79,7 @@ def load_and_wrangle_PARALLEL(
         folder_path = "../01_download_raw_gee_data/gee-raw-data/" + subdir
 
     file_name = (
-        "site_" + str(site_id) + file_extension
+        "site_" + str(SiteID) + file_extension
     )  # Change this to your desired file extension
 
     # Use glob to get a list of file paths
@@ -101,7 +101,7 @@ def load_and_wrangle_PARALLEL(
             df_raw = pd.merge(df_raw, df, on=["date", "SiteID"])
 
         # Attach site ID and first year
-        df_raw["SiteID"] = site_id
+        df_raw["SiteID"] = SiteID
         df_raw["first_year"] = first_year
 
         # -------------------------------------------------------------------------------------
@@ -151,7 +151,7 @@ def load_and_wrangle_PARALLEL(
             
         return df_wrangled
     else:
-        if verbose: warnings.warn(f"No files found for site {site_id}: {folder_path}/{file_name}")
+        if verbose: warnings.warn(f"No files found for site {SiteID}: {folder_path}/{file_name}")
         return return_empty_df
 
 

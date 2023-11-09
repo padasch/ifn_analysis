@@ -1,6 +1,7 @@
 from gee_subset import gee_subset
 from warnings import warn
 from datetime import datetime
+from pyprojroot.here import here
 
 import os, re
 
@@ -14,33 +15,33 @@ ee.Initialize()
 
 # ----------------------------------------------------------------
 def get_location_site_df():
-    return pd.read_csv("sites_years.csv")
+    return pd.read_csv(here("python/00_process_nfi_data/nfi_final_sites.csv"))
 
 # ----------------------------------------------------------------
 def adjust_first_last_date(df, plus_years, minus_years, first_date, last_date):
     """
-    Adjusts the first and last date of a dataframe based on the 'first_visit' column and given parameters.
+    Adjusts the first and last date of a dataframe based on the 'first_year' column and given parameters.
     
     Args:
-    - df: pandas dataframe with a 'first_visit' column
-    - plus_years: integer, number of years to add to 'first_visit' for the last date
-    - minus_years: integer, number of years to subtract from 'first_visit' for the first date
+    - df: pandas dataframe with a 'first_year' column
+    - plus_years: integer, number of years to add to 'first_year' for the last date
+    - minus_years: integer, number of years to subtract from 'first_year' for the first date
     - first_date: string, date in format 'MM-dd' to add to the calculated first date
     - last_date: string, date in format 'MM-dd' to add to the calculated last date
     
     Returns:
-    - df: pandas dataframe with adjusted 'first_date' and 'last_date' columns, and 'first_visit' column dropped
+    - df: pandas dataframe with adjusted 'first_date' and 'last_date' columns, and 'first_year' column dropped
     """
         
-    # Convert 'first_visit' to integer for calculation
-    df['first_visit'] = df['first_visit'].astype(int)
+    # Convert 'first_year' to integer for calculation
+    df['first_year'] = df['first_year'].astype(int)
 
     # Add first and last date
-    df['first_date'] = (df['first_visit'] - minus_years).astype(str) + first_date
-    df['last_date']  = (df['first_visit'] + plus_years).astype(str)  + last_date
+    df['first_date'] = (df['first_year'] - minus_years).astype(str) + first_date
+    df['last_date']  = (df['first_year'] + plus_years).astype(str)  + last_date
 
-    # Drop first_visit
-    df = df.drop(columns=['first_visit'])
+    # Drop first_year
+    df = df.drop(columns=['first_year'])
     
     return df
 
