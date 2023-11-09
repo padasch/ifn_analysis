@@ -623,7 +623,8 @@ load_or_save_latest_file(nfi_dataset_raw, "save")
 
 ## Create final dataset for analysis
 ```{r}
-filter_raw_nfi_data() # does: load_or_save_latest_file(nfi_dataset_for_analysis, "save")
+load_or_save_latest_file(nfi_dataset_raw, "load")
+ff <- filter_raw_nfi_data() # does: load_or_save_latest_file(nfi_dataset_for_analysis, "save")
 ```
 
 # Visuals
