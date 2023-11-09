@@ -20,3 +20,6 @@ ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
 # Python Stuff
 ifna-venv/*
 *.dcf
+*.zip
+*.tif
+*.xml
