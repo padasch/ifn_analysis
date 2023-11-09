@@ -66,7 +66,7 @@ def load_and_wrangle_PARALLEL(
 
     # ----------------------------------------------------------------------------------------
     # Fix inputs
-    SiteID = my_group["id"].iloc[0]
+    SiteID = my_group["SiteID"].iloc[0]
     first_year = my_group["first_year"].iloc[0]
     return_empty_df = pd.DataFrame(columns=["SiteID", "first_year"])
 

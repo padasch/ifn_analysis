@@ -14,8 +14,12 @@ import ee
 ee.Initialize()
 
 # ----------------------------------------------------------------
-def get_location_site_df():
-    return pd.read_csv(here("python/00_process_nfi_data/nfi_final_sites.csv"))
+def get_nfi_coordinates_site_year(with_idp=True):
+    
+    if with_idp:
+        return pd.read_csv(here("python/00_process_nfi_data/nfi_final_sites_with_idp.csv"))
+    
+    return pd.read_csv(here("python/00_process_nfi_data/nfi_final_sites_without_idp.csv"))
 
 # ----------------------------------------------------------------
 def adjust_first_last_date(df, plus_years, minus_years, first_date, last_date):
@@ -71,6 +75,7 @@ def smaller_date(date_str1, date_str2):
 import datetime
 
 def larger_date(date_str1, date_str2):
+    
     """
     Returns the larger of two dates in string format.
 
