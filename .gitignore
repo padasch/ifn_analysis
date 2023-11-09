@@ -26,3 +26,4 @@ ifna-venv/*
 *.tif
 *.xml
 .vscode/settings.json
+R/_backgroundjobs.R
