@@ -10,15 +10,15 @@ analysis/render/*
 analysis/.quarto/*
 figures
 qgis-project
-R/_backgroundjobs.R
 *.rds
-*.feather
-*.pyc
 *.csv
 ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
+*backgroundjobs*
 
 # Python Stuff
 ifna-venv/*
+*.feather
+*.pyc
 
 # Unwanted files
 *.dcf
@@ -26,4 +26,3 @@ ifna-venv/*
 *.tif
 *.xml
 .vscode/settings.json
-R/_backgroundjobs.R
