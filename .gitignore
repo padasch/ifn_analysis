@@ -16,3 +16,6 @@ R/_backgroundjobs.R
 *.pyc
 *.csv
 ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
+
+# Python Stuff
+ifna-env/*
