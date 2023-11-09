@@ -18,4 +18,4 @@ R/_backgroundjobs.R
 ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
 
 # Python Stuff
-ifna-env/*
+ifna-venv/*
