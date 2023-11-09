@@ -1,19 +1,16 @@
+from gee_subset import gee_subset
 from warnings import warn
+from datetime import datetime
+
+import os, re
+
+import warnings
 import pandas as pd
+import geopandas as gpd
+import ee
 
-# ----------------------------------------------------------------
-def import_libraries():
-    
-    # Import Libraries
-    import ee
-    # ee.Authenticate()
-    ee.Initialize()
-
-    import os, re
-    import pandas as pd
-    from gee_subset import gee_subset
-    import geopandas as gpd
-    from datetime import datetime
+# ee.Authenticate()
+ee.Initialize()
 
 # ----------------------------------------------------------------
 def get_location_site_df():
@@ -21,9 +18,20 @@ def get_location_site_df():
 
 # ----------------------------------------------------------------
 def adjust_first_last_date(df, plus_years, minus_years, first_date, last_date):
+    """
+    Adjusts the first and last date of a dataframe based on the 'first_visit' column and given parameters.
     
-    import pandas as pd
+    Args:
+    - df: pandas dataframe with a 'first_visit' column
+    - plus_years: integer, number of years to add to 'first_visit' for the last date
+    - minus_years: integer, number of years to subtract from 'first_visit' for the first date
+    - first_date: string, date in format 'MM-dd' to add to the calculated first date
+    - last_date: string, date in format 'MM-dd' to add to the calculated last date
     
+    Returns:
+    - df: pandas dataframe with adjusted 'first_date' and 'last_date' columns, and 'first_visit' column dropped
+    """
+        
     # Convert 'first_visit' to integer for calculation
     df['first_visit'] = df['first_visit'].astype(int)
 
@@ -37,9 +45,16 @@ def adjust_first_last_date(df, plus_years, minus_years, first_date, last_date):
     return df
 
 def smaller_date(date_str1, date_str2):
-    
-    # Import libraries
-    import datetime
+    """
+    Returns the smaller of two dates in string format.
+
+    Args:
+        date_str1 (str): A date string in the format '%Y-%m-%d'.
+        date_str2 (str): A date string in the format '%Y-%m-%d'.
+
+    Returns:
+        str: The smaller of the two dates in string format.
+    """
     
     # Convert strings to datetime objects
     date1 = datetime.datetime.strptime(date_str1, '%Y-%m-%d')
@@ -52,20 +67,28 @@ def smaller_date(date_str1, date_str2):
     return smaller_date_str
 
 # ----------------------------------------------------------------
-def larger_date(date_str1, date_str2):
-    
-    # Import libraries
-    import datetime
+import datetime
 
+def larger_date(date_str1, date_str2):
+    """
+    Returns the larger of two dates in string format.
+
+    Args:
+        date_str1 (str): A date string in the format '%Y-%m-%d'.
+        date_str2 (str): A date string in the format '%Y-%m-%d'.
+
+    Returns:
+        str: The larger of the two dates in string format.
+    """
     # Convert strings to datetime objects
     date1 = datetime.datetime.strptime(date_str1, '%Y-%m-%d')
     date2 = datetime.datetime.strptime(date_str2, '%Y-%m-%d')
 
-    # Find the smaller date
-    smaller_date = max(date1, date2)
-    smaller_date_str = smaller_date.strftime('%Y-%m-%d')
+    # Find the larger date
+    larger_date = max(date1, date2)
+    larger_date_str = larger_date.strftime('%Y-%m-%d')
 
-    return smaller_date_str
+    return larger_date_str
 
 # ----------------------------------------------------------------
 def download_gee_data(
@@ -78,12 +101,23 @@ def download_gee_data(
     product_end_date,
     product_scale,
     output_scale,
-    output_folder,):        
-        
-    import os, re
-    from gee_subset import gee_subset
-    import pandas as pd
-    import datetime as dt
+    output_folder,
+    ):
+    """
+    Downloads Google Earth Engine data for a set of sites and saves it to disk.
+
+    Args:
+        siteSet (set): A set of site IDs to download data for.
+        skip_to_i (int): The index of the first site to download data for.
+        product (str): The name of the Google Earth Engine product to download.
+        my_bands (list): A list of band names to download.
+        data_clean (pandas.DataFrame): A DataFrame containing site information.
+        product_start_date (str): The start date for the product data to download.
+        product_end_date (str): The end date for the product data to download.
+        product_scale (int): The scale of the product data to download.
+        output_scale (int): The scale of the output data to save.
+        output_folder (str): The path to the folder where the output data will be saved.
+    """
     
     # Create folder if it doesn't exist
     if not os.path.exists(output_folder):
@@ -125,14 +159,26 @@ def download_gee_data_PARALLEL(
     output_scale,
     output_folder,
     verbose = False,):        
+    """
+    Downloads Google Earth Engine data for a given set of sites in parallel.
     
-    # Import Libraries
-    import warnings
+    Args:
+    - my_group: pandas DataFrame containing site information
+    - product: string, name of the GEE product to download
+    - my_bands: list of strings, names of the bands to download
+    - product_start_date: string, start date of the product to download
+    - product_end_date: string, end date of the product to download
+    - product_scale: int, scale of the product to download
+    - output_scale: int, scale of the output data
+    - output_folder: string, path to the folder where the output data will be saved
+    - verbose: bool, whether to print progress messages
+    
+    Returns:
+    None
+    """     
+    
     warnings.simplefilter(action="ignore", category=FutureWarning)
-    import os
-    from gee_subset import gee_subset
-    import ee
-    ee.Initialize()
+
     
     # Create folder if it doesn't exist
     if not os.path.exists(output_folder): os.makedirs(output_folder)
@@ -162,7 +208,7 @@ def download_gee_data_PARALLEL(
         df_loop.to_feather(output_folder + "/site_" + str(my_group.iloc[i, 0]) + ".feather")
 
 # ----------------------------------------------------------------
-def download_data_for_year(current_year, data_clean, siteSet, output_folder, product, my_bands, product_scale, output_scale):
+def download_data_for_year(current_year, data_clean, siteSet, output_folder, product, my_bands, product_start_date, product_end_date, product_scale, output_scale):
 
     '''
     Function to download data per year and band for ERA5 daily.
