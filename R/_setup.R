@@ -23,7 +23,8 @@ packages <- c(
   "caret", "ranger",
   
   # Spatial data
-  "terra", "leaflet", "sp", "sf", "raster", "stars", "rgee", "rnaturalearth",
+  "terra", "leaflet", "sp", "sf", "raster", "stars", "rnaturalearth",
+  # "rgee",
   
   # To facilitate coding:
   "tictoc", "beepr"
@@ -55,7 +56,7 @@ if (any(installed_packages == FALSE)) {
 
 # Packages loading
 invisible(lapply(packages, library, character.only = TRUE))
-conflict_prefer(name = "select", winner = "dplyr")
-conflict_prefer(name = "filter", winner = "dplyr")
+conflicts_prefer(dplyr::select)
+conflicts_prefer(dplyr::filter)
 
 
