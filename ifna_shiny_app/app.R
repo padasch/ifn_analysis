@@ -10,7 +10,7 @@ library(ggridges)
 library(sf)
 library(here)
 library(patchwork)
-source("R/f_create_map_from_aggregated_data.R")
+source("R/f_create_hexmap_from_aggregated_data.R")
 source("R/f_load_or_save_latest_file.R")
 
 # Load data ----
