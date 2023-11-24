@@ -186,6 +186,18 @@ df_comb_tree_class <-
               rename(espar = lvl_french) |> 
               mutate(tree_class = as.factor(tree_class)),
             by = join_by(espar))
+
+# Reduce species information in NFI to number lvl
+# Take espar as vector
+espar <- df_comb_tree_class$espar
+
+# Extracting only the numbers
+numbers <- espar %>% 
+  str_extract_all(pattern = "\\d+") %>% 
+  map(~ if (length(.) > 0) as.numeric(.[1]) else NA) %>%
+  unlist()
+
+df_comb_tree_class$espar_red <- as.factor(numbers)
 ```
 
 ### Size & age class
@@ -384,6 +396,7 @@ df_tmp <-
   select(-xxx)
 ```
 
+#### Land Use
 ```{r}
 # Land Use Classification
 df_landuse <- 
@@ -424,11 +437,17 @@ df_luc_final <-
     df_change,
     by = join_by(idp)
   )
+```
 
+#### Nature Impact
+```{r}
 # ______________________________________________________________________________
 # Natural Impact 
 # TODO: Is this relevant at all or is the data not good enough as it is?
+```
 
+#### Human Impact
+```{r}
 # ______________________________________________________________________________
 # Human Impact
 df_tmp <-
@@ -465,10 +484,98 @@ df_fin_human <-
     df_tmp_human,
     by = join_by(idp, prelev5, def5, gest, elag, nlisi5, instp5, andain)
   )
+```
 
-# ______________________________________________________________________________
-# Geographic Information
+#### Species Dominance
+```{r}
+message("Identification of dominant species takes quite some time...",
+        "\n Read something until it beeps :)")
+
+tic()
 df_tmp <- df_fin_human
+df_specdom <- 
+    df_tmp |> 
+    dplyr::select(idp, ba_1, ba_2, 
+                  tree_state_1, tree_state_2, tree_state_change, 
+                  species_lat, espar_red, genus_lat, tree_class
+                  ) |> 
+    # Using the filter below means that we are reducing our total information on a given site
+    # which introduces a bias and should therefore not be done.
+    # filter(tree_state_change %in% c("alive_alive", "alive_dead", "alive_cut")) |>
+    nest(data = -idp) |> 
+    # slice_sample(n=100) |>
+    mutate(
+      
+      # Dominance:
+      dominant_species = 
+         map_chr(
+           data,
+           ~get_dominant_factor_per_plot(
+             .,
+             group_var = "species_lat", 
+             based_on_ntrees_or_totalba = "totalba",
+             mix_threshold = 0.6
+           ),
+           .progress = TRUE
+         ),
+      
+       dominant_tree_class = 
+         map_chr(
+           data,
+           ~get_dominant_factor_per_plot(
+             .,
+             group_var = "tree_class", 
+             based_on_ntrees_or_totalba = "totalba",
+             mix_threshold = 0.6
+           ),
+           .progress = TRUE
+         ),
+      
+      # Count number of species per plot
+      n_species_per_plot = 
+        map_dbl(data, ~pull(., species_lat) |> unique() |> length())
+      ) 
+toc()
+beepr::beep()
+```
+
+#### Forest Conditions
+```{r}
+message("Assessing forest conditions takes quite some time...",
+        "\n Read something until it beeps :)")
+tic()
+df_tmp <-
+  df_specdom |>
+  mutate(
+    site_total_ba_at_v1  = map_dbl(data, ~pull(., ba_1) |> sum(na.rm = TRUE)),
+    site_total_ba_at_v2  = map_dbl(data, ~pull(., ba_2) |> sum(na.rm = TRUE)),
+    
+    # How much of the standing biomass has been dead at first visit already?
+    site_ba_prc_dead_at_v1 = map_dbl(data, ~filter(., tree_state_1 == "dead") |> pull(ba_1) |> sum(na.rm = TRUE), progress = TRUE),
+    site_ba_prc_dead_at_v1 = site_ba_prc_dead_at_v1 / site_total_ba_at_v1,
+    
+    # How much of the standing biomass has been dead after 5 years?
+    site_ba_prc_dead_at_v2 = map_dbl(data, ~filter(., tree_state_2 == "dead") |> pull(ba_2) |> sum(na.rm = TRUE), progress = TRUE),
+    site_ba_prc_dead_at_v2 = site_ba_prc_dead_at_v2 / site_total_ba_at_v2,
+    
+    # How much of the standing biomass has been cut after 5 years?
+    site_ba_prc_cut_at_v2  = map_dbl(data, ~filter(., tree_state_2 == "cut") |> pull(ba_2) |> sum(na.rm = TRUE), progress = TRUE),
+    site_ba_prc_cut_at_v2  = site_ba_prc_cut_at_v2 / site_total_ba_at_v2,
+    
+    # How much of the standing biomass has grown within 5 years?
+    site_ba_prc_rec_at_v2  = map_dbl(data, ~filter(., tree_state_1 == "alive") |> pull(ba_2) |> sum(na.rm = TRUE), progress = TRUE),
+    site_ba_prc_rec_at_v2  = site_ba_prc_rec_at_v2 / site_total_ba_at_v2
+  )
+
+df_forestconditions <- df_tmp |> dplyr::select(-data) |> right_join(df_fin_human, by = join_by(idp))
+toc()
+beepr::beep()
+```
+
+#### Geographic Information
+```{r}
+# Geographic Information
+df_tmp <- df_forestconditions
 df_geo <- df_tmp |> mutate(gre = substr(ser, 1,1))
 
 # ______________________________________________________________________________
@@ -482,7 +589,7 @@ columns_only_in_final_df <- setdiff(names(df_before_adding_vars), names(df_after
 columns_not_in_both      <- base::union(columns_only_in_new_df, columns_only_in_final_df)
 
 # Print or use the result as needed
-message("> New variables added to dataset: \n  ", paste0(columns_not_in_both, collapse = ", "))
+message("> New variables added to dataset: \n  - ", paste0(columns_not_in_both, collapse = "\n  - "))
 ```
 
 ## Add other NFI Data
@@ -624,7 +731,9 @@ load_or_save_latest_file(nfi_dataset_raw, "save")
 ## Create final dataset for analysis
 ```{r}
 load_or_save_latest_file(nfi_dataset_raw, "load")
-ff <- filter_raw_nfi_data() # does: load_or_save_latest_file(nfi_dataset_for_analysis, "save")
+nfi_dataset_for_analysis <- filter_raw_nfi_data()
+load_or_save_latest_file(nfi_dataset_for_analysis, "save")
+message("\n  ... Done! Saved nfi_dataset_for_analysis.")
 ```
 
 # Visuals
