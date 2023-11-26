@@ -310,7 +310,7 @@ get_dominant_factor_per_plot <- function(
 ) {
   
   # Check input
-  pot_group_vars <- c("genus_lat", "tree_class")
+  pot_group_vars <- c("genus_lat", "tree_class", "species_lat", "espar_lat")
   if (!(group_var %in% pot_group_vars)) {
     stop(paste0(
       "\n> Invalid choice for `group_var`. Pick one of: ",

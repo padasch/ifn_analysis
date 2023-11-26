@@ -10,7 +10,7 @@ load_or_save_latest_file <- function(data_variable, action = "load") {
   
   if (action == "load") {
     # List all RDS files in the tmp directory that match the data_variable_name
-    rds_files <- list.files(path = tmp_dir, pattern = paste0("_", data_variable_name), full.names = TRUE)
+    rds_files <- list.files(path = tmp_dir, pattern = paste0("_", data_variable_name, ".rds"), full.names = TRUE)
     
     if (length(rds_files) > 0) {
       # Extract modification times for all matching RDS files
@@ -31,6 +31,9 @@ load_or_save_latest_file <- function(data_variable, action = "load") {
       # Display the latest modified file and its modification time
       cat("Loading the latest modified file:", latest_file, "\n")
       # cat("Last modified time:", max(file_info_df$LastModified), "\n")
+      
+      return(readRDS(latest_file))
+      
     } else {
       cat("No matching RDS files found in the tmp directory.\n")
     }
