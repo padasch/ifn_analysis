@@ -624,6 +624,12 @@ df_tmp <-
 # - l_raw_data$bois_mort
 #   Data unlikely of explanatory value.
 
+# Quality check, no new rows should be added
+if (nrow(df_after_adding_vars) != nrow(df_tmp)) {
+  beepr::beep(5)
+  error("MERGING DUPLICATED SITES, SHOULD NOT HAPPEN!")
+}
+
 df_allnfidata <- df_tmp
 ```
 
