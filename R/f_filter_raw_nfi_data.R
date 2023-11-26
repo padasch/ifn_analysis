@@ -15,61 +15,8 @@ filter_raw_nfi_data <- function(
   load_or_save_latest_file(nfi_dataset_raw, "load")
   df_tmp <- nfi_dataset_raw
   
-  # Add percentage of survived / lost / cut and dominant species / tree type
-  message(paste0("> filter_raw_nfi_data():",
-                 "\n  ... assessing dominant species and class takes ~10 minutes\n  ... until: ",
-                 format((Sys.time() + minutes(10)), format = "%H:%M:%S")
-                 ))
-  
- 
-  tic() 
-  df_tmp <- 
-    df_tmp |> 
-    dplyr::select(idp, ba_1, tree_state_change, genus_lat, tree_class) |> 
-    filter(tree_state_change %in% c("alive_alive", "alive_dead", "alive_cut")) |> 
-    nest(data = -idp) |> 
-    # slice(1:20) |> 
-    mutate(
-      
-      # Percentages:
-      # Note: Reduced to cutting only because the others are covered in growth and mortality calculations
-      tot       = map_dbl(data, ~pull(., ba_1) |> sum(na.rm = T)),
-      # perc_surv = map_dbl(data, ~filter(., tree_state_change == "alive_alive") |> pull(ba_1) |> sum(na.rm = T)) / tot,
-      # perc_died = map_dbl(data, ~filter(., tree_state_change == "alive_dead")  |> pull(ba_1) |> sum(na.rm = T)) / tot,
-      perc_cut  = map_dbl(data, ~filter(., tree_state_change == "alive_cut")   |> pull(ba_1) |> sum(na.rm = T)) / tot,
-      
-      # Dominance:
-      dominant_species = 
-         map_chr(
-           data,
-           ~get_dominant_factor_per_plot(
-             .,
-             group_var = "genus_lat", 
-             based_on_ntrees_or_totalba = "totalba",
-             mix_threshold = 0.6
-           ),
-           .progress = TRUE
-         ),
-       dominant_tree_class = 
-         map_chr(
-           data,
-           ~get_dominant_factor_per_plot(
-             .,
-             group_var = "tree_class", 
-             based_on_ntrees_or_totalba = "totalba",
-             mix_threshold = 0.6
-           ),
-           .progress = TRUE
-         )) |> 
-    dplyr::select(-data, -tot) |> 
-    right_join(df_tmp, by = join_by(idp))
-  toc()
-  
   # Remove faulty ∆ calculations
-  df_tmp <- df_tmp |> filter(dbh_change_perc_yr >= 0 | is.na(dbh_change_perc_yr)) 
-  
-  # Remove outliers
-  df_tmp <- df_tmp |> filter(dbh_change_perc_yr < quantile(dbh_change_perc_yr, 0.99, na.rm = TRUE)) 
+  df_tmp <- df_tmp |> filter(dbh_change_perc_yr >= -0.05 | is.na(dbh_change_perc_yr)) 
   
   # ______________________________________________________________________________
   # Keep only suitable sites 
@@ -116,8 +63,5 @@ filter_raw_nfi_data <- function(
     ) 
   
   nfi_dataset_for_analysis <- df_tmp 
-  load_or_save_latest_file(nfi_dataset_for_analysis, "save")
-  message("\n  ... Done! Saved nfi_dataset_for_analysis.")
-  
   return(nfi_dataset_for_analysis)
 }
