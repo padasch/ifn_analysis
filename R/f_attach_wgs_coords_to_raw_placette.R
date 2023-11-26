@@ -12,7 +12,7 @@ f_attach_wgs_coords_to_raw_placette <- function(df) {
   sf_l93 <- sf::st_as_sf(coords_l93, coords = c("lon", "lat"), crs = 2154)
   
   # Transform to WGS84
-  coords_wgs84     <- sf::st_transform(sf_l93, crs = 4326)
+  coords_wgs84         <- sf::st_transform(sf_l93, crs = 4326)
   coords_wgs84$lat_new <- sf::st_coordinates(coords_wgs84)[, "Y"]
   coords_wgs84$lon_new <- sf::st_coordinates(coords_wgs84)[, "X"]
   coords_wgs84 <- coords_wgs84 |> as_tibble() |> select(id, lat_new, lon_new)
