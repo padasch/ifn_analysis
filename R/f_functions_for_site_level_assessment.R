@@ -310,88 +310,151 @@ get_dominant_factor_per_plot <- function(
 ) {
   
   # Check input
-  pot_group_vars <- c("genus_lat", "tree_class", "species_lat", "espar_lat")
-  if (!(group_var %in% pot_group_vars)) {
-    stop(paste0(
-      "\n> Invalid choice for `group_var`. Pick one of: ",
-      paste0(pot_group_vars, collapse = ", ")
-    ))
-  }
-  # 
-  # needed_vars <- c("idp", "campagne_1", "tree_id", group_var, "tree_state_change")
-  # if (based_on_ntrees_or_totalba == "totalba") needed_vars <- c(needed_vars, "ba_1")
-  # 
-  # if (!(all(needed_vars %in% names(df_in)))) {
-  #   stop("> Input variable is missing!")
+  pot_group_vars <- c("genus_lat", "tree_class", "species_lat", "espar_red")
+  # if (!(group_var %in% pot_group_vars)) {
+  #   stop(paste0(
+  #     "\n> Invalid choice for `group_var`. Pick one of: ",
+  #     paste0(pot_group_vars, collapse = ", ")
+  #   ))
   # }
-  # 
-  # # Nest dataframe by site
-  # df_tmp <- df_in |> group_by(idp, campagne_1) |> nest()
   
   # Assesement based on basal area
-  if (based_on_ntrees_or_totalba == "totalba") {
+  if (group_var %in% pot_group_vars) {
     
-    # Get total at first visit
-    total <- sum(df_in$ba_1, na.rm = TRUE)
-    
-    if (is.na(total)) {
-      message(paste0(
-        "> Basal area has only missing data, is data filtered properly?",
-        "\n  Returning NA"
-      ))
-      return(NA)
+    if (based_on_ntrees_or_totalba == "totalba") {
+      
+      # Initialise output dataframe
+      df <- tibble(
+        !!paste0("dom_nr1_", group_var, "_", "fct")    := "none",
+        !!paste0("dom_nr1_", group_var, "_", "ba_abs") := 0,
+        !!paste0("dom_nr1_", group_var, "_", "ba_prc") := 0,
+        
+        !!paste0("dom_nr2_", group_var, "_", "fct")    := "none",
+        !!paste0("dom_nr2_", group_var, "_", "ba_abs") := 0,
+        !!paste0("dom_nr2_", group_var, "_", "ba_prc") := 0,
+        
+        !!paste0("dom_nr3_", group_var, "_", "fct")    := "none",
+        !!paste0("dom_nr3_", group_var, "_", "ba_abs") := 0,
+        !!paste0("dom_nr3_", group_var, "_", "ba_prc") := 0,
+        
+        !!paste0("dom_rest_", group_var, "_", "fct")    := "none",
+        !!paste0("dom_rest_", group_var, "_", "ba_abs") := 0,
+        !!paste0("dom_rest_", group_var, "_", "ba_prc") := 0
+      )
+      
+      # Get total at first visit
+      total <- sum(df_in$ba_1, na.rm = TRUE)
+      
+      if (is.na(total)) {
+        message(paste0(
+          "> Basal area has only missing data, is data filtered properly?",
+          "\n  Returning NA dataframe"
+        ))
+        return(df)
+      }
+      
+      # Get dominance order 
+      ttt <- 
+        df_in |> 
+        group_by_at(group_var) |> 
+        summarise(sum = sum(ba_1, na.rm = TRUE)) |> 
+        mutate(perc_ba = sum / total) |> 
+        arrange(desc(sum))
+      
+      # Populate output dataframe
+      # Define cut-off of how many species should be named explicit
+      cut_off <- 3 # Three explicit species, rest added under "remaining"
+      
+      for (i in 1:min(cut_off, nrow(ttt))) {
+        df[paste0("dom_nr", i, "_", group_var, "_", "fct")]    <- ttt[i, 1]
+        df[paste0("dom_nr", i, "_", group_var, "_", "ba_abs")] <- ttt[i, 2]
+        df[paste0("dom_nr", i, "_", group_var, "_", "ba_prc")] <- ttt[i, 3]
+      }
+      
+      if (nrow(ttt) > cut_off) {
+        df[paste0("dom_rest_", group_var, "_", "fct")]    <- "remaining"
+        df[paste0("dom_rest_", group_var, "_", "ba_abs")] <- sum(ttt[i, 2], na.rm = TRUE)
+        df[paste0("dom_rest_", group_var, "_", "ba_prc")] <- sum(ttt[i, 3], na.rm = TRUE)
+      }
     }
     
-    ttt <- 
+  # ________________________________________________________________________________________________
+  } else if (group_var %in% c("tca", "tcl")) {
+    
+    # Initialise output dataframe
+    df <- tibble(
+      !!paste0("dom_nr1_", group_var, "_", "fct") := "none",
+      !!paste0("dom_nr1_", group_var, "_", "prc") := 0,
+      
+      !!paste0("dom_nr2_", group_var, "_", "fct") := "none",
+      !!paste0("dom_nr2_", group_var, "_", "prc") := 0,
+      
+      !!paste0("dom_nr3_", group_var, "_", "fct") := "none",
+      !!paste0("dom_nr3_", group_var, "_", "prc") := 0,
+      
+      !!paste0("dom_rest_", group_var, "_", "fct") := "none",
+      !!paste0("dom_rest_", group_var, "_", "prc") := 0,
+    )
+    
+    # Get temporary df
+    ttt <-
       df_in |> 
-      group_by_at(group_var) |> 
-      summarise(sum = sum(ba_1)) |> 
-      mutate(perc_ba = sum / total) |> 
-      arrange(desc(sum)) |> 
-      filter(perc_ba > mix_threshold)
+      group_by_at("espar_red") |> 
+      summarise(sum = sum(!!sym(group_var), na.rm = TRUE)) |> 
+      arrange(desc(sum))
     
-    if (nrow(ttt) == 0) {
-      dominant <- "none"
-    } else {
-      dominant <- ttt[[group_var]][1]
+    # Populate output dataframe
+    # Define cut-off of how many species should be named explicit
+    cut_off <- 3 # Three explicit species, rest added under "remaining"
+    
+    for (i in 1:min(cut_off, nrow(ttt))) {
+      df[paste0("dom_nr", i, "_", group_var, "_", "fct")] <- ttt[i, "espar_red"]
+      df[paste0("dom_nr", i, "_", group_var, "_", "prc")] <- ttt[i, "sum"]
     }
     
-    # Assessment based on number of trees
-  } else if (based_on_ntrees_or_totalba == "ntrees") {
-    
-    # Get total at first visit
-    total <- nrow(df_in)
-    
-    if (total == 0) {
-      message(paste0(
-        "> Basal area has only missing data, is data filtered properly?",
-        "\n  Returning NA"
-      ))
-      return(NA)
+    if (nrow(ttt) > cut_off) {
+      df[paste0("dom_nr", i, "_", group_var, "_", "fct")] <- "remaining"
+      df[paste0("dom_nr", i, "_", group_var, "_", "prc")] <- sum(ttt[i, "sum"], na.rm = TRUE)
     }
-    
-    ttt <- 
-      df_in |> 
-      group_by_at(group_var) |> 
-      summarise(sum = n()) |> 
-      mutate(perc_ba = sum / total) |> 
-      arrange(desc(sum)) |> 
-      filter(perc_ba > mix_threshold)
-    
-    if (ttt["broadleaf"] > mix_threshold) {
-      dominant <- "broadleaf"
-    } else if (ttt["broadleaf"] < (1 - mix_threshold)) {
-      dominant <- "pinus"
-    } else {
-      dominant <- "mixed"
-    }
-  } else {
-    # Catch error
-    stop("> Invalid calculation reference.")
   }
   
-  # Return
-  return(as.character(dominant))
+  # Assessment based on number of trees
+  # TODO: Outcommented on 2023-11-27 to focus only on BA dominance
+  # else if (based_on_ntrees_or_totalba == "ntrees") {
+  #   
+  #   # Get total at first visit
+  #   total <- nrow(df_in)
+  #   
+  #   if (total == 0) {
+  #     message(paste0(
+  #       "> Basal area has only missing data, is data filtered properly?",
+  #       "\n  Returning NA"
+  #     ))
+  #     return(df)
+  #   }
+  #   
+  #   # Get dominance order
+  #   ttt <- 
+  #     df_in |> 
+  #     group_by_at(group_var) |> 
+  #     summarise(sum = n()) |> 
+  #     mutate(perc_ba = sum / total) |> 
+  #     arrange(desc(sum)) |> 
+  #     filter(perc_ba > mix_threshold)
+  #   
+  #   if (ttt["broadleaf"] > mix_threshold) {
+  #     dominant <- "broadleaf"
+  #   } else if (ttt["broadleaf"] < (1 - mix_threshold)) {
+  #     dominant <- "pinus"
+  #   } else {
+  #     dominant <- "mixed"
+  #   }
+  # } else {
+  #   # Catch error
+  #   stop("> Invalid calculation reference.")
+  # }
   
+  # Return
+  return(df)
 }
 
