@@ -8,6 +8,13 @@ editor_options:
 source(here::here("R/_setup.R"))
 ```
 
+```{r}
+compare_dataset_dims <- function(df1, df2){
+  cat("df1: ", dim(df1),
+      "\ndf2: ", dim(df2))
+}
+```
+
 # Data Cleaning
 ## Widen data to one tree per row
 ```{r}
@@ -126,8 +133,9 @@ load_or_save_latest_file(df_comb, "save")
 
 ```{r}
 # Load data
-load_or_save_latest_file(df_comb, "load")
+df_comb <- load_or_save_latest_file(df_comb, "load")
 head(df_comb)
+dim(df_comb)
 ```
 
 ## Add tree-level information
@@ -168,7 +176,9 @@ df_comb_tree_state <-
   mutate(
     tree_state_1      = ifelse(revisit_state == "newly_sampled", "new", tree_state_1),
     tree_state_change = as.factor(paste0(tree_state_1, "_", tree_state_2))
-    ) 
+    )
+
+compare_dataset_dims(df_comb, df_comb_tree_state)
 ```
 
 ### Species
@@ -198,6 +208,8 @@ numbers <- espar %>%
   unlist()
 
 df_comb_tree_class$espar_red <- as.factor(numbers)
+
+compare_dataset_dims(df_comb_tree_state, df_comb_tree_class)
 ```
 
 ### Size & age class
@@ -223,6 +235,8 @@ df_plus_age_height_classes <-
     age_class    = cut(age13,  age_breaks,    age_breaks_txt, include.lowest = TRUE),
     height_class = cut(htot,   height_breaks, height_breaks_txt, include.lowest = TRUE)
     )
+
+compare_dataset_dims(df_comb_tree_class, df_plus_age_height_classes)
 ```
 
 ### Add Shadow Growth of Circumference
@@ -231,8 +245,8 @@ df_plus_age_height_classes <-
 # Create temporary df for this section
 df_tmp <- df_plus_age_height_classes
 
-# Split datasets into cut and not cut
-idx <- which(df_tmp$tree_state_2 == "cut")
+# Split datasets into cut and not cut, and where c13 and ir5 is not NA
+idx <- which(df_tmp$tree_state_2 == "cut" & !is.na(df_tmp$c13_1) & !is.na(df_tmp$ir5))
 
 # Do splitting only if index is not empty
 if (length(idx) != 0) {
@@ -242,12 +256,10 @@ if (length(idx) != 0) {
   
   # Calculate the circumference achieved until a tree was cut
   # Calculation based on `ifn_wood_harvest_removal.pdf`
-  # Drop data if growth could not be back-calculated
   df_edit <- 
     df_edit |> 
     mutate(c13_2 = c13_1 + ir5/2,
-           shadow_growth = "yes") |> 
-    drop_na(c13_2)
+           shadow_growth = "yes")
   
   # Combine datasets again
   df_comb_shadow_cut <- 
@@ -258,6 +270,8 @@ if (length(idx) != 0) {
 } else {
   df_comb_shadow_cut <- df_tmp
 }
+
+compare_dataset_dims(df_plus_age_height_classes, df_comb_shadow_cut)
 ```
 
 #### Not re-measured dead trees
@@ -265,7 +279,7 @@ if (length(idx) != 0) {
 df_tmp <- df_comb_shadow_cut
 
 # Create subset for not re-measured dead trees
-idx <- which(df_tmp$tree_state_2 == "dead" & is.na(df_tmp$c13_2))
+idx <- which(df_tmp$tree_state_2 == "dead" & is.na(df_tmp$c13_2) & !is.na(df_tmp$ir5))
 
 # Do splitting only if index is not empty
 if (length(idx) != 0) {
@@ -279,8 +293,7 @@ if (length(idx) != 0) {
   df_edit <- 
     df_edit |> 
     mutate(c13_2 = c13_1 + ir5/2,
-           shadow_growth = "yes") |> 
-    drop_na(c13_2)
+           shadow_growth = "yes")
   
   # Combine datasets again
   df_comb_shadow_dead <- 
@@ -290,6 +303,8 @@ if (length(idx) != 0) {
 } else {
   df_comb_shadow_dead <- df_tmp
 }
+
+compare_dataset_dims(df_comb_shadow_cut, df_comb_shadow_dead)
 ```
 
 #### Not re-measured alive trees
@@ -297,7 +312,7 @@ if (length(idx) != 0) {
 df_tmp <- df_comb_shadow_dead
 
 # Create subset for not re-measured alive trees
-idx <- which(df_tmp$tree_state_2 == "alive" & is.na(df_tmp$c13_2))
+idx <- which(df_tmp$tree_state_2 == "alive" & is.na(df_tmp$c13_2) & !is.na(df_tmp$ir5))
 
 # Do splitting only if index is not empty
 if (length(idx) != 0) {
@@ -311,8 +326,7 @@ if (length(idx) != 0) {
   df_edit <- 
     df_edit |> 
     mutate(c13_2 = c13_1 + ir5,
-           shadow_growth = "yes") |> 
-    drop_na(c13_2)
+           shadow_growth = "yes")
   
   # Combine datasets again
   df_comb_shadow_alive <- 
@@ -322,6 +336,8 @@ if (length(idx) != 0) {
 } else {
   df_comb_shadow_alive <- df_tmp
 }
+
+compare_dataset_dims(df_comb_shadow_dead, df_comb_shadow_alive)
 ```
 
 ### Calculate ∆ C13, DBH, BA
@@ -366,16 +382,18 @@ df_size_change <-
     dbh_change_perc_yr = ifelse(dbh_change_perc_yr == Inf, NA, dbh_change_perc_yr), 
     ba_change_perc_yr  = ifelse(ba_change_perc_yr  == Inf, NA, ba_change_perc_yr)
   )
+
+compare_dataset_dims(df_plus_age_height_classes, df_size_change)
 ```
 
-## Add site-level information
 
+## Add site-level information
 ```{r}
-df_before_adding_vars <- df_size_change
+df_before_adding_site_level_vars <- df_size_change
 
 # Aggregate data to plot level to speed things up
 df_tmp <-
-  df_before_adding_vars |> 
+  df_before_adding_site_level_vars |> 
   select(idp, uta1, uta2, autut_1, autut_2, utip_1, utip_2, csa_1, csa_2) |> 
   distinct() |> 
   mutate(
@@ -433,7 +451,7 @@ df_change <-
 
 df_luc_final <- 
   left_join(
-    df_before_adding_vars,
+    df_before_adding_site_level_vars,
     df_change,
     by = join_by(idp)
   )
@@ -484,6 +502,8 @@ df_fin_human <-
     df_tmp_human,
     by = join_by(idp, prelev5, def5, gest, elag, nlisi5, instp5, andain)
   )
+
+compare_dataset_dims(df_before_adding_site_level_vars, df_luc_final)
 ```
 
 #### Species Dominance
@@ -506,35 +526,65 @@ df_specdom <-
     # slice_sample(n=100) |>
     mutate(
       
-      # Dominance:
+      # Species dominance:
       dominant_species = 
-         map_chr(
+         map(
            data,
            ~get_dominant_factor_per_plot(
              .,
              group_var = "species_lat", 
-             based_on_ntrees_or_totalba = "totalba",
-             mix_threshold = 0.6
+             based_on_ntrees_or_totalba = "totalba"
            ),
            .progress = TRUE
          ),
       
-       dominant_tree_class = 
-         map_chr(
+      # Genus dominance:
+      dominant_genus = 
+         map(
            data,
            ~get_dominant_factor_per_plot(
              .,
-             group_var = "tree_class", 
-             based_on_ntrees_or_totalba = "totalba",
-             mix_threshold = 0.6
+             group_var = "genus_lat", 
+             based_on_ntrees_or_totalba = "totalba"
            ),
            .progress = TRUE
          ),
       
+      # NFI species dominance:
+      dominant_nfispecies = 
+         map(
+           data,
+           ~get_dominant_factor_per_plot(
+             .,
+             group_var = "espar_red", 
+             based_on_ntrees_or_totalba = "totalba"
+           ),
+           .progress = TRUE
+         ),
+      
+      # Dominant tree class
+      dominant_tree_class = 
+        map(
+          data,
+          ~get_dominant_factor_per_plot(
+            .,
+            group_var = "tree_class", 
+            based_on_ntrees_or_totalba = "totalba"
+          ),
+          .progress = TRUE
+        ),
+      
       # Count number of species per plot
-      n_species_per_plot = 
-        map_dbl(data, ~pull(., species_lat) |> unique() |> length())
-      ) 
+      # Using latin species
+      n_species_per_plot_lat = 
+        map_dbl(data, ~pull(., species_lat) |> unique() |> length()),
+      
+      # Using nfi species
+      n_species_per_plot_nfi = 
+        map_dbl(data, ~pull(., espar_red) |> unique() |> length())
+      ) |> 
+  unnest(c(dominant_genus, dominant_species, dominant_nfispecies, dominant_tree_class))
+
 toc()
 beepr::beep()
 ```
@@ -567,9 +617,15 @@ df_tmp <-
     site_ba_prc_rec_at_v2  = site_ba_prc_rec_at_v2 / site_total_ba_at_v2
   )
 
-df_forestconditions <- df_tmp |> dplyr::select(-data) |> right_join(df_fin_human, by = join_by(idp))
+df_forestconditions <- 
+  df_tmp |>
+  dplyr::select(-data) |> 
+  right_join(df_fin_human, by = join_by(idp))
 toc()
 beepr::beep()
+
+compare_dataset_dims(df_specdom, df_tmp)
+compare_dataset_dims(df_forestconditions, df_fin_human)
 ```
 
 #### Geographic Information
@@ -578,14 +634,14 @@ beepr::beep()
 df_tmp <- df_forestconditions
 df_geo <- df_tmp |> mutate(gre = substr(ser, 1,1))
 
-# ______________________________________________________________________________
-# Final df
-df_after_adding_vars <- df_geo
+compare_dataset_dims(df_forestconditions, df_geo)
 ```
 
 ```{r}
-columns_only_in_new_df   <- setdiff(names(df_after_adding_vars), names(df_before_adding_vars))
-columns_only_in_final_df <- setdiff(names(df_before_adding_vars), names(df_after_adding_vars))
+df_after_adding_vars <- df_geo
+
+columns_only_in_new_df   <- setdiff(names(df_after_adding_vars), names(df_before_adding_site_level_vars))
+columns_only_in_final_df <- setdiff(names(df_before_adding_site_level_vars), names(df_after_adding_vars))
 columns_not_in_both      <- base::union(columns_only_in_new_df, columns_only_in_final_df)
 
 # Print or use the result as needed
@@ -597,8 +653,8 @@ message("> New variables added to dataset: \n  - ", paste0(columns_not_in_both, 
 df_tmp <- df_after_adding_vars
 l_raw_data |> names()
 
-# Add information on tree coverage
-df_tmp <- 
+# Add information on tree coverage (data comes aggregated per nfi species per plot)
+df_couvert <- 
   df_tmp |> 
   left_join(
     l_raw_data$couvert |> 
@@ -607,13 +663,34 @@ df_tmp <-
     by = join_by(campagne_1, idp, espar)
   )
 
+# Extract location-level information from species-level tree coverage data
+df_llcover <-
+  df_couvert |> 
+  select(idp, espar_red, tca, tcl) |> 
+  distinct() |> 
+  nest(data = -idp) |> 
+  mutate(
+    dominant_tca = map(data, ~get_dominant_factor_per_plot(.,group_var = "tca"),.progress = TRUE),
+    dominant_tcl = map(data, ~get_dominant_factor_per_plot(.,group_var = "tcl"),.progress = TRUE)
+  ) |> 
+  unnest(c(dominant_tca, dominant_tcl)) |> 
+  select(-data)
+
+df_couvert_merged <- 
+  df_couvert |> 
+  left_join(df_llcover, by = join_by("idp"))
+
+compare_dataset_dims(df_couvert, df_couvert_merged)
+
 # Add information on ecology
-df_tmp <- 
-  df_tmp |> 
+df_ecology <- 
+  df_couvert_merged |> 
   left_join(
     l_raw_data$ecologie |> select(-campagne),
     by = join_by(idp)
   ) 
+
+compare_dataset_dims(df_ecology, df_couvert_merged)
 
 # - l_raw_data$habitat
 #   not really useful, maybe the variable `hab` but there are multiple values for the same site
@@ -624,111 +701,17 @@ df_tmp <-
 # - l_raw_data$bois_mort
 #   Data unlikely of explanatory value.
 
-# Quality check, no new rows should be added
-if (nrow(df_after_adding_vars) != nrow(df_tmp)) {
-  beepr::beep(5)
-  error("MERGING DUPLICATED SITES, SHOULD NOT HAPPEN!")
-}
+df_allnfidata <- df_ecology
 
-df_allnfidata <- df_tmp
+compare_dataset_dims(df_after_adding_vars, df_allnfidata)
 ```
 
-## Check encoding of variables
+## Final QC
 ```{r}
-df_tmp <- df_allnfidata
-
-# ______________________________________________________________________________
-# Encode all characters as factors
-character_vars <- df_tmp |> select_if(is.character) |> names()
-message("> Character variables in the dataset turned into factors:\n  ", paste0(character_vars, sep = "\n  "))
-for (var in character_vars) {df_tmp[[var]] <- as.factor(df_tmp[[var]])}
-df_factorised <- df_tmp
-
-# ______________________________________________________________________________
-# Turn falsely numerical into factors
-# df_factorised |> select(where(is.numeric)) |> names() |> paste(collapse = '",\n"') |> cat()
-
-turn_to_factor <- 
-  c(
-    # "visit_1",
-    # "visit_2",
-    # "hrb",
-    # "campagne_1",
-    # "campagne_2",
-    # "c13_1",
-    # "c13_2",
-    "q1",
-    "q2",
-    "q3",
-    # "age13",
-    # "age",
-    # "c0",
-    # "htot",
-    # "hdec",
-    "ddec",
-    "lfsd",
-    # "v",
-    # "w",
-    "r",
-    # "ir5",
-    # "ir1",
-    # "lon_fr",
-    # "lat_fr",
-    "anpyr",
-    # "lat",
-    # "lon",
-    "bplant_1",
-    "bplant_2",
-    "iplant_1",
-    "iplant_2",
-    "videpeuplier_1",
-    "videpeuplier_2"
-    # "elisi",
-    # "c13_change_abs_yr",
-    # "c13_change_perc_yr",
-    # "dbh_1",
-    # "dbh_2",
-    # "dbh_change_abs_yr",
-    # "dbh_change_perc_yr",
-    # "ba_1",
-    # "ba_2",
-    # "ba_change_abs_yr",
-    # "ba_change_perc_yr",
-    # "avg_growth_height_meter_per_yr",
-    # "avg_growth_ba_per_year",
-    # "tca",
-    # "tcl",
-    # "expo",
-    # "msud",
-    # "masque",
-    # "pent2",
-    # "prof1",
-    # "prof2"
-  )
-
-df_tmp <- df_factorised |> mutate(across(all_of(turn_to_factor), as.factor))
-
-# ______________________________________________________________________________
-# Check factors with more than 200 lvls, which should likely be numerical values!
-#   Should only return idp and tree_id
-# df_tmp |>
-#   select_if(is.factor)  |>
-#   summarise(across(everything(), ~sum(nlevels(.)) > 50))  |>
-#   gather()  |>
-#   filter(value)  |>
-#   pull(key)
-# 
-# df_tmp |>
-#   select_if(is.factor)  |>
-#   summarise(across(everything(), ~sum(nlevels(.)) == 11))  |>
-#   gather()  |>
-#   filter(value)  |>
-#   pull(key)
-
-df_cleaned_encoding <- df_tmp
+compare_dataset_dims(df_comb, df_allnfidata)
 ```
 
-### Save RDS
+## Save RDS
 ```{r}
 nfi_dataset_raw <- df_cleaned_encoding
 load_or_save_latest_file(nfi_dataset_raw, "save")
