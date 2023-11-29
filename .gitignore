@@ -26,6 +26,8 @@ ifna-venv/*
 *.tif
 *.xml
 .vscode/settings.json
+*.xlsx
+*.parquet
 
 # Unwanted folders
 python/04_run_ml_models/model_runs
