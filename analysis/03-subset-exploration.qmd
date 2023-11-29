@@ -462,6 +462,13 @@ df_luc_final <-
 # ______________________________________________________________________________
 # Natural Impact 
 # TODO: Is this relevant at all or is the data not good enough as it is?
+df_luc_final |> 
+  mutate(ba_x_gameintensity = ba_1 * as.double(deggib)) |> 
+  select(idp, ba_x_gameintensity) |> 
+  nest(data = -idp) |> 
+  mutate(
+    total_game_intensity = map_dbl(data, ~sum(.$ba_x_gameintensity, na.rm = TRUE)),
+  )
 ```
 
 #### Human Impact
