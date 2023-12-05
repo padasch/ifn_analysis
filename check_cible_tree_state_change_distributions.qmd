@@ -1,0 +1,105 @@
+---
+title: "Check cible and tree_state_change distributions"
+format: html
+editor: visual
+---
+
+## Prepare Data
+
+```{r}
+# Get df_plus_age_height_classes from data wrangling file
+subset <- df_plus_age_height_classes |> filter(between(campagne_1, 2010, 2016))
+```
+
+```{r}
+tmp <- 
+  subset |> 
+  select(idp, tree_id, tree_state_change, cible, c13_1, c13_2, campagne_1) |> 
+  nest(data = -idp) |> 
+  # slice_sample(n=1000) |>
+  mutate(
+    cible_na_count = map_dbl(data, ~filter(., is.na(cible)) |> nrow()),
+    cible_na_group = ifelse(cible_na_count > 1, paste(">1"), paste(cible_na_count)),
+    cible_na_group_10 = ifelse(cible_na_count > 10, paste(">10"), paste(cible_na_count)),
+    n_trees = map_dbl(data, ~nrow(.)),
+    df = map(data, ~table(.$tree_state_change) |> as.data.frame() |> pivot_wider(names_from = "Var1", values_from = "Freq"))
+         ) |> 
+  unnest(df)
+
+cible_1 <- 
+  subset |> 
+  select(idp, tree_id, tree_state_change, cible, c13_1, c13_2, campagne_1) |> 
+  filter(cible %in% c(1)) |> 
+  nest(data = -idp) |> 
+  # slice_sample(n=1000) |>
+  mutate(
+    n_trees = map_dbl(data, ~nrow(.)),
+    df = map(data, ~table(.$tree_state_change) |> as.data.frame() |> pivot_wider(names_from = "Var1", values_from = "Freq"))
+         ) |> 
+  unnest(df)
+```
+
+## cible
+
+```{r}
+cat("\n Count Distribution of cible at tree level: ")
+table(subset$cible, useNA = "always")
+
+cat("\n % Distribution of cible at tree level: ")
+round(
+  table(subset$cible, useNA = "always") / nrow(subset) * 100,
+  2)
+
+cat("\n\n Count Distribution of cible == NA at plot level: ")
+table(tmp$cible_na_group, useNA = "always")
+
+cat("\n % Distribution of cible == NA at plot level: ")
+
+round(
+  table(tmp$cible_na_group, useNA = "always") / nrow(tmp) * 100,
+  2)
+```
+
+There is a significant amount of trees with cible == NA (20%) and locations where at least one tree was labelled to be cible == NA (50%)!
+
+## tree_state_change
+
+```{r}
+((subset$tree_state_change |> table())/nrow(subset)) |> sort() |> barplot(las = 2, horiz = F)
+```
+
+```{r}
+cat("\n Total number of plots: ", nrow(tmp))
+cat("\n Plots with alive_dead > 0 and alive_NA > 0:", tmp |> filter(alive_dead > 0, alive_NA > 0) |> nrow())
+cat("\n Plots with alive_dead > 0:", tmp |> filter(alive_dead > 0) |> nrow())
+cat("\n Plots with alive_NA > 0:", tmp |> filter(alive_NA > 0) |> nrow())
+```
+
+Out of all plots with mortality, only \~1% of plots have alive_NA trees. So, all tree_state_changes with NA values can be dropped.
+
+-   Question: How should we treat dead_dead trees to get stand-description?
+
+```{r}
+cat("\n Where there are no cible NA:")
+cat("\n Total number of plots: ", nrow(tmp |> filter(cible_na_count == 0)))
+cat("\n Plots with alive_dead > 0 and alive_NA > 0:", tmp |> filter(cible_na_count == 0, alive_dead > 0, alive_NA > 0) |> nrow())
+cat("\n Plots with alive_dead > 0:", tmp |> filter(cible_na_count == 0, alive_dead > 0) |> nrow())
+cat("\n Plots with alive_NA > 0:", tmp |> filter(cible_na_count == 0, alive_NA > 0) |> nrow())
+```
+
+```{r}
+sites_with_dead_trees <- nfi_dataset_raw |> filter(tree_state_change == "alive_dead") |> pull(idp) |> unique()
+
+tmp <- nfi_dataset_raw |> 
+  filter(between(campagne_1, 2010, 2016), 
+         idp %in% sites_with_dead_trees,
+         dbh_change_perc_yr >= -0.05 | is.na(dbh_change_perc_yr),
+         shadow_growth == "no",
+         tree_state_change %in% c("alive_alive", "alive_dead", "new_alive")
+         )
+ttt <- tmp |> pull(cible) |> table(useNA = "always")
+
+ttt
+  
+round(ttt/nrow(tmp)*100)
+```
