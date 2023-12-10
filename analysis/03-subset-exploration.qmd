@@ -466,7 +466,7 @@ df_specdom <-
     species_metrics = map(data, ~get_site_metrics_of_top_3_species(
       .,
       vars_in = c("ba_1", "age13", "ir5", "v", "htot"),
-      metrics_in = c("mean", "sd")
+      metrics_in = c("mean", "sd", "range")
       ), .progress = TRUE),
     
     # Dominant tree class # Probably not very important either...
