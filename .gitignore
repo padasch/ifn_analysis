@@ -28,6 +28,17 @@ ifna-venv/*
 .vscode/settings.json
 *.xlsx
 *.parquet
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.xls
+*.xlsx
 
 # Unwanted folders
 python/04_run_ml_models/model_runs
+python/03_process_france_data/edo_qc_files/heatw_random_sites.png
