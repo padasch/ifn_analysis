@@ -38,6 +38,8 @@ ifna-venv/*
 *.ppt
 *.xls
 *.xlsx
+*.json
+*.geojson
 
 # Unwanted folders
 python/04_run_ml_models/model_runs
