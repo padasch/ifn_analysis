@@ -224,13 +224,12 @@ def parallel_edo_extraction(group_in, df_sites, progress_bar=False, debug=False,
     return df_all_dates
 
 # ------------------------------------------------------------------------------------------
-def seasonal_aggregation_per_site(df_in, current_var, fcts_to_apply):
+def seasonal_aggregation_per_site(df_in, current_var, fcts_to_apply, progress_bar=False):
     grouped = df_in.groupby("idp")  # Group by idp
     df_list = [group for name, group in grouped]  # Create list
     df_out = pd.DataFrame()  # Create empty dataframe for output
 
-    for i in tqdm(range(len(df_list))):
-        # for i in range(len(df_list)):
+    for i in tqdm(range(len(df_list)), disable=not progress_bar):
         current_group = df_list[i].copy()[
             ["idp", "date", "first_year", "season", current_var]
         ]
@@ -325,7 +324,16 @@ def get_seasonal_aggregates(
     i = 0  # Set counter to 0
     
     # Define dictionary with functions
-    fct_dict = {'mean': np.nanmean, 'std': np.nanstd, 'median': np.nanmedian, 'max': np.nanmax, 'min': np.nanmin, 'range': range_func, 'sum': np.nansum, 'iqr': iqr_func}
+    fct_dict = {
+        'mean': np.nanmean,
+        'std': np.nanstd,
+        'median': np.nanmedian,
+        'max': np.nanmax,
+        'min': np.nanmin,
+        'range': range_func,
+        'sum': np.nansum,
+        'iqr': iqr_func
+        }
     
     # Loop through functions
     for my_fct in fcts_to_apply:
@@ -333,6 +341,7 @@ def get_seasonal_aggregates(
         # Loop through variables
         for my_var in vars_to_aggregate:
             # print(my_var)
+            # my_var = my_var[0]
             df_tmp = df_filtered_daterange.groupby("season", observed=False)[my_var].agg(fct_dict[my_fct])
 
             # Loop through seasons
@@ -354,7 +363,156 @@ def get_seasonal_aggregates(
 
 # Define custom aggregation functions
 def range_func(x):
-    return x.nanmax() - x.minnan()
+    x = x.dropna()
+    return x.max() - x.min()
 
 def iqr_func(x):
-    return x.nanquantile(0.75) - x.nanquantile(0.25)
+    x = x.dropna()
+    return x.quantile(0.75) - x.quantile(0.25)
+
+
+
+# ------------------------------------------------------------------------------------------
+# FUNCTIONS FOR EXTRACTING EXTREME EVENTS FROM EDO DATA
+# ------------------------------------------------------------------------------------------
+def extract_extreme_events_per_idp(df_in):
+    # Get df with idp
+    df_befaft_all = pd.DataFrame({"idp": df_in["idp"].unique()})
+    df_grouped_by_befaft = df_in.groupby("before_first_year")
+
+    for _, g_befaft in df_grouped_by_befaft:
+        # Get metrics on extreme events
+        df_metrics_all = pd.DataFrame()
+        # df_metrics_all = pd.DataFrame({"idp": g_befaft["idp"].unique()})
+
+        # Loop over groups heat and cold waves
+        df_grouped_by_wave = g_befaft.groupby("heat_or_cold")
+        for _, g_wave in df_grouped_by_wave:
+            # Extract metrics
+            df_metrics = extract_extreme_wave_metrics(g_wave)
+            # Merge metrics
+            df_metrics_all = pd.concat([df_metrics_all, df_metrics], axis=1)
+
+        # Add suffix based on before or after
+        is_before = g_befaft["before_first_year"].unique()[0]
+        # display(is_before)
+        if is_before:
+            df_metrics_all = df_metrics_all.add_suffix("_tmin5")
+        else:
+            df_metrics_all = df_metrics_all.add_suffix("_tpls5")
+
+        # display(df_metrics_all)
+
+        # Concatenate to df_befaft_all column-wise
+        df_befaft_all = pd.concat([df_befaft_all, df_metrics_all], axis=1)
+
+    return df_befaft_all
+
+# ------------------------------------------------------------------------------------------
+def extract_extreme_wave_metrics(group_in):
+    # Input
+    wave_type = group_in["heat_or_cold"].unique()[0]
+    # display(wave_type)
+
+    # Prepare empty dataframe
+    df_out = pd.DataFrame(
+        {
+            "n_events": np.nan,
+            "temp_min": np.nan,
+            "temp_max": np.nan,
+            "temp_mean": np.nan,
+            "days_btwn_events_mean": np.nan,
+            "days_btwn_events_min": np.nan,
+            "duration_max": np.nan,
+            "duration_mean": np.nan,
+            "duration_sum": np.nan,
+        },
+        index=[0],
+    )
+
+    ## Attach grouping variable for each wave segment
+    # Create a boolean series where True indicates non-NA values
+    non_na = group_in["heatw"].notna()
+
+    # Use cumsum on the negated non_na series to form groups
+    group = (~non_na).cumsum()
+
+    # Retain group numbers only for non-NA rows
+    group_in["group"] = group.where(non_na, np.nan)
+
+    # Drop rows where '"heatw"' is NaN
+    filtered_df = group_in.dropna(subset=["heatw"]).copy()
+
+    # Group by 'wave_id'
+    grouped = filtered_df.groupby("group")
+    # for g in grouped:
+    # display(grouped.get_group(g[0]))
+
+    # Get number of events
+    n_events = len(grouped)
+    
+    
+    if len(filtered_df) == 0:
+        df_out["n_events"] = 0
+
+    else:
+    
+        # Calculate the size of each group
+        wave_sizes = grouped.size()
+
+        # Calculate required statistics
+        duration_max = wave_sizes.max()
+        duration_mean = wave_sizes.mean()
+        duration_sum = wave_sizes.sum()
+
+        # Calculate the difference in days between consecutive waves
+        start_dates = pd.DataFrame(grouped["date"].min()).rename(
+            columns={"date": "start_date"}
+        )
+        end_dates = pd.DataFrame(grouped["date"].max()).rename(columns={"date": "end_date"})
+        # Shift rows of end dates one down to calculate time from last end to next start easier
+        end_dates = end_dates.shift(1)
+
+        df_dates = pd.concat([start_dates, end_dates], axis=1)[["start_date", "end_date"]]
+
+        # Get time differences from end_date to start_date
+        df_dates["time_diff"] = df_dates["start_date"] - df_dates["end_date"]
+
+        # Turn duration into integer
+        df_dates["time_diff"] = df_dates["time_diff"].dt.days
+
+        # Calculate the average and minimum time interval
+        days_btwn_events_mean = df_dates["time_diff"].mean()
+        days_btwn_events_min = df_dates["time_diff"].min()
+
+        # Extract the mean and max extreme temperature
+        if wave_type == "heatwave":
+            temp_var = "maxtmp"
+        else:
+            temp_var = "mintmp"
+
+        temp_min = filtered_df[temp_var].min()
+        temp_max = filtered_df[temp_var].max()
+        temp_mean = filtered_df[temp_var].mean()
+
+        # Overwrite data
+        df_out["n_events"] = n_events
+        
+        df_out["temp_min"] = temp_min
+        df_out["temp_max"] = temp_max
+        df_out["temp_mean"] = temp_mean
+
+        df_out["duration_max"] = duration_max
+        df_out["duration_mean"] = duration_mean
+        df_out["duration_sum"] = duration_sum
+
+        df_out["days_btwn_events_mean"] = days_btwn_events_mean
+        df_out["days_btwn_events_min"] = days_btwn_events_min
+
+    # Add prefix based on wave type
+    if wave_type == "heatwave":
+        df_out = df_out.add_prefix("hw_")
+    else:
+        df_out = df_out.add_prefix("cw_")
+
+    return df_out
