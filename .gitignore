@@ -18,6 +18,7 @@ ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
 # Python Stuff
 ifna-venv/*
 *.feather
+*.pkl
 *.pyc
 
 # Unwanted files
@@ -40,6 +41,7 @@ ifna-venv/*
 *.xlsx
 *.json
 *.geojson
+
 
 # Unwanted folders
 python/04_run_ml_models/model_runs
