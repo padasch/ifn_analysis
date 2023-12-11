@@ -156,3 +156,5 @@ def calculate_growth_mortality(df_in, verbose=False, divide_by_nplots=False, gro
     )
 
     return df_out
+
+# -----------------------------------------------------------------------------
