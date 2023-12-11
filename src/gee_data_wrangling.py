@@ -123,8 +123,8 @@ def load_and_wrangle_PARALLEL(
             error(f"Cleaning steps for {subdir} not implemented yet...")
             return return_empty_df
 
-        # -------------------------------------------------------------------------------------
         # Cleaning can lead to empty dataframes, so returning them if that is the case
+        # -------------------------------------------------------------------------------------
         if  df_cleaned.shape[0] == 0:
             # return empty df
             return return_empty_df
@@ -136,8 +136,8 @@ def load_and_wrangle_PARALLEL(
         if return_which == "cleaned":
             return df_cleaned
         
-        # -------------------------------------------------------------------------------------
         # Wrangle Cleaned Data
+        # -------------------------------------------------------------------------------------
         if subdir == "modis-vi":
             df_wrangled = wrangle_vegetation_indeces(df_cleaned, prefix = 'modis')
         elif subdir == "sentinel":
@@ -493,7 +493,6 @@ def get_seasonal_aggregates(
     Args:
     - df_in: pandas DataFrame containing the data to aggregate.
     - timescale_days_to_months: str, optional. The timescale to use for aggregation. Default is "fall cut-off".
-    - fcts_to_apply: list of str, optional. The functions to apply for aggregation. Default is ["mean", "std"].
     - verbose: bool, optional. Whether to print information about the number of variables created. Default is True.
     - debug: bool, optional. Whether to print debug information. Default is False.
 
@@ -505,6 +504,9 @@ def get_seasonal_aggregates(
     import pandas as pd
     import datetime as dt
     from os import error
+
+    print("❗❗❗ FUNCTION DISABLED, MOVED TO `extract_raster_values()` because when working on EDO data, it could not be loaded from here. Function version over there has updates for when time BEFORE starting date should be extracted ❗❗❗")
+    return None
 
     # Checks
     if df_in is None:
@@ -518,7 +520,8 @@ def get_seasonal_aggregates(
     first_year = df_in["first_year"].unique()[0]
 
     vars_to_aggregate = df_in.drop(
-        columns=["date", "SiteID", "season", "first_year"]
+        columns=["date", "idp","SiteID", "season", "first_year"],
+        errors="ignore",
     ).columns
 
     # Reduce dataframe to relevant time period
