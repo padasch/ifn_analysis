@@ -19,7 +19,7 @@ def extract_raster_values(tiff_file, variable_name, latitudes, longitudes, progr
     with rasterio.open(tiff_file) as src:
         # Print the CRS (Coordinate Reference System) for quality control purposes
         if not expected_crs in str(src.crs):
-            print(f"\t🚧 WARNING: The CRS is {str(src.crs)} and not RGF93. Make sure inputed coordinates have matching CRS!.")
+            print(f"\t🚧 WARNING: The CRS is {str(src.crs)} and not {expected_crs}. Make sure inputed coordinates have matching CRS!.")
             print(f"\t Returning None!")
             return None
 
@@ -172,7 +172,7 @@ def wrapper_for_large_files(group_in, tif_in, var_in, progress_bar = False):
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
-def parallel_edo_extraction(group_in, df_sites, progress_bar=False, debug=False):
+def parallel_edo_extraction(group_in, df_sites, progress_bar=False, debug=False, expected_crs=None):
     """
     Extracts EDO data for all sites in df_sites for all files in group_in.
     """
@@ -203,10 +203,10 @@ def parallel_edo_extraction(group_in, df_sites, progress_bar=False, debug=False)
         df = extract_raster_values(
             tiff_file=current_file,
             variable_name=current_var,
-            latitudes=current_sites.y_eu,
-            longitudes=current_sites.x_eu,
+            latitudes=current_sites.y,
+            longitudes=current_sites.x,
             progress_bar=False,
-            expected_crs="EPSG:3035",
+            expected_crs=expected_crs,
         )
 
         # Attach date to df
@@ -224,7 +224,7 @@ def parallel_edo_extraction(group_in, df_sites, progress_bar=False, debug=False)
     return df_all_dates
 
 # ------------------------------------------------------------------------------------------
-def seasonal_aggregation_per_site(df_in, current_var):
+def seasonal_aggregation_per_site(df_in, current_var, fcts_to_apply):
     grouped = df_in.groupby("idp")  # Group by idp
     df_list = [group for name, group in grouped]  # Create list
     df_out = pd.DataFrame()  # Create empty dataframe for output
@@ -239,7 +239,7 @@ def seasonal_aggregation_per_site(df_in, current_var):
         df_i = get_seasonal_aggregates(
             df_in=current_group,
             timescale_days_to_months="fall cut-off",
-            fcts_to_apply=["mean", "std", "rrange"],
+            fcts_to_apply=fcts_to_apply,
             debug=False,
             verbose=False,
         )
@@ -259,21 +259,19 @@ def full_extraction_per_edo_subfolder():
 def get_seasonal_aggregates(
     df_in=None,
     timescale_days_to_months="fall cut-off",
-    fcts_to_apply=["mean", "std", "rrange"],
-    shift_first_year=0,
+    fcts_to_apply=None,
     verbose=False,
     debug=False,
 ):
     """
     Compute seasonal aggregates of variables in a given dataframe.
     ❗ Function calculates the five years following the `first year` variable in the dataframe.
-    ❗ If the previous x years are needed, adjust `shift_first_year` (input -5 for shifting 5 years back)
+    ❗ If the previous x years are needed, shift input `first_year` by x years.
 
     Args:
     - df_in: pandas DataFrame containing the data to aggregate.
     - timescale_days_to_months: str, optional. The timescale to use for aggregation. Default is "fall cut-off".
     - fcts_to_apply: list of str, optional. The functions to apply for aggregation. Default is ["mean", "std"].
-    - shift_first_year: int, optional. The number of years to shift the first year in the dataframe. Default is 0.
     - verbose: bool, optional. Whether to print information about the number of variables created. Default is True.
     - debug: bool, optional. Whether to print debug information. Default is False.
 
@@ -289,6 +287,13 @@ def get_seasonal_aggregates(
     # Checks
     if df_in is None:
         error("No dataframe provided.")
+    
+    supported_fcts = ['mean', 'std', 'median', 'max', 'min', 'range', 'sum', 'iqr']
+    default_fcts = ['mean', 'std']
+    
+    if fcts_to_apply is None:
+        print(f"No functions provided! Using default: {default_fcts}.",
+              f"Supported functions are: {supported_fcts}")
 
     # Settings
     # timescale_days_to_months = "fall cut-off"
@@ -296,7 +301,6 @@ def get_seasonal_aggregates(
     # fcts_to_apply     = ['mean', 'std', 'median', 'max', 'min']
 
     first_year = df_in["first_year"].unique()[0]
-    first_year = first_year + shift_first_year
 
     vars_to_aggregate = df_in.drop(
         columns=["date", "idp","SiteID", "season", "first_year"],
@@ -306,6 +310,7 @@ def get_seasonal_aggregates(
     # Reduce dataframe to relevant time period
     if timescale_days_to_months == "fall cut-off":
         # Set first and last day of time period
+        # fall cut-off means that the first year of impact starts in September
         cut_off_date = "-09-01"
 
         first_day = str(first_year) + cut_off_date
@@ -318,10 +323,9 @@ def get_seasonal_aggregates(
         {"nan": [np.nan]}
     )  # For some reason, I need to add an NA entry to attach new values in the loop...
     i = 0  # Set counter to 0
-
-    # Define range function
-    def rrange(x):
-        return max(x) - min(x)
+    
+    # Define dictionary with functions
+    fct_dict = {'mean': np.nanmean, 'std': np.nanstd, 'median': np.nanmedian, 'max': np.nanmax, 'min': np.nanmin, 'range': range_func, 'sum': np.nansum, 'iqr': iqr_func}
     
     # Loop through functions
     for my_fct in fcts_to_apply:
@@ -329,11 +333,7 @@ def get_seasonal_aggregates(
         # Loop through variables
         for my_var in vars_to_aggregate:
             # print(my_var)
-            df_tmp = df_filtered_daterange.groupby("season", observed=False)[
-                my_var
-            ].agg(my_fct)
-            # print(df_tmp)
-            # print(df_tmp['fall'])
+            df_tmp = df_filtered_daterange.groupby("season", observed=False)[my_var].agg(fct_dict[my_fct])
 
             # Loop through seasons
             for my_season in df_in["season"].unique():
@@ -351,3 +351,10 @@ def get_seasonal_aggregates(
     df_outside = df_outside.drop(columns=["nan"])
 
     return df_outside
+
+# Define custom aggregation functions
+def range_func(x):
+    return x.nanmax() - x.minnan()
+
+def iqr_func(x):
+    return x.nanquantile(0.75) - x.nanquantile(0.25)
