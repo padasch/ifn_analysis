@@ -6,17 +6,17 @@
 library(shiny)
 library(tidyverse)
 library(ggplot2)
-library(ggridges)
-library(sf)
+# library(ggridges)
+# library(sf)
 library(here)
-library(patchwork)
+# library(patchwork)
 source("R/f_create_hexmap_from_aggregated_data.R")
 source("R/f_load_or_save_latest_file.R")
 
 # Load data ----
 # ______________________________________________________________________________
-load_or_save_latest_file(nfi_dataset_for_analysis, "load")
-my_data <- nfi_dataset_for_analysis
+# load_or_save_latest_file(nfi_dataset_for_analysis, "load")
+# my_data <- nfi_dataset_for_analysis
 
 # Set fixed input ----
 # Input options
@@ -77,10 +77,10 @@ tt_paths_2g <- c(
   str_replace("/Users/pascal/repos/padasch/ifn_analysis/ifna_shiny_app", here())
 
 ### Data Exploration ----
-de_my_x_selection <- my_data |> select(where(is.numeric)) |> names()
-de_my_y_selection <- my_data |> select(where(is.numeric)) |> names()
-de_my_g_selection <- my_data |> select(where(is.factor)) |> names()
-de_my_g_selection <- c(de_my_g_selection, "none")
+# de_my_x_selection <- my_data |> select(where(is.numeric)) |> names()
+# de_my_y_selection <- my_data |> select(where(is.numeric)) |> names()
+# de_my_g_selection <- my_data |> select(where(is.factor)) |> names()
+# de_my_g_selection <- c(de_my_g_selection, "none")
 
 # ______________________________________________________________________________
 # Functions ----
@@ -135,55 +135,55 @@ get_filename_for_tt <- function(
 # Create static dfs ----
 # ______________________________________________________________________________
 # Those df that need a long time of being created
-df_temp_species <- 
-  my_data |>
-  filter(genus_lat %in% my_species_list) |> 
-  group_by(campagne_1, genus_lat) |>
-  nest() |>
-  mutate(
-    n_survived = map_dbl(data, ~filter(., revisit_state == "revisited",
-                                       tree_state_1 == "alive",
-                                       tree_state_2 == "alive") |> nrow()),
-    n_died     = map_dbl(data, ~filter(., revisit_state == "revisited",
-                                       tree_state_1 == "alive",
-                                       tree_state_2 == "dead") |> nrow()),
-    n_all      = n_survived + n_died,
-    mortality  = (1 - (n_survived / n_all) ^ (1 / 5)) * 100
-  )
-
-df_temp_height <- 
-  my_data |>
-  filter(genus_lat %in% my_species_list) |> 
-  group_by(height_class, campagne_1, genus_lat) |>
-  nest() |>
-  drop_na(height_class) |>
-  mutate(
-    n_survived = map_dbl(data, ~filter(., revisit_state == "revisited",
-                                       tree_state_1 == "alive",
-                                       tree_state_2 == "alive") |> nrow()),
-    n_died     = map_dbl(data, ~filter(., revisit_state == "revisited",
-                                       tree_state_1 == "alive",
-                                       tree_state_2 == "dead") |> nrow()),
-    n_all      = n_survived + n_died,
-    mortality  = (1 - (n_survived / n_all) ^ (1 / 5)) * 100
-  )
-
-df_temp_age <- 
-  my_data |>
-  filter(genus_lat %in% my_species_list) |> 
-  group_by(age_class, campagne_1, genus_lat) |>
-  nest() |>
-  drop_na(age_class) |>
-  mutate(
-    n_survived = map_dbl(data, ~filter(., revisit_state == "revisited",
-                                       tree_state_1 == "alive",
-                                       tree_state_2 == "alive") |> nrow()),
-    n_died     = map_dbl(data, ~filter(., revisit_state == "revisited",
-                                       tree_state_1 == "alive",
-                                       tree_state_2 == "dead") |> nrow()),
-    n_all      = n_survived + n_died,
-    mortality  = (1 - (n_survived / n_all) ^ (1 / 5)) * 100
-  )
+# df_temp_species <- 
+#   my_data |>
+#   filter(genus_lat %in% my_species_list) |> 
+#   group_by(campagne_1, genus_lat) |>
+#   nest() |>
+#   mutate(
+#     n_survived = map_dbl(data, ~filter(., revisit_state == "revisited",
+#                                        tree_state_1 == "alive",
+#                                        tree_state_2 == "alive") |> nrow()),
+#     n_died     = map_dbl(data, ~filter(., revisit_state == "revisited",
+#                                        tree_state_1 == "alive",
+#                                        tree_state_2 == "dead") |> nrow()),
+#     n_all      = n_survived + n_died,
+#     mortality  = (1 - (n_survived / n_all) ^ (1 / 5)) * 100
+#   )
+# 
+# df_temp_height <- 
+#   my_data |>
+#   filter(genus_lat %in% my_species_list) |> 
+#   group_by(height_class, campagne_1, genus_lat) |>
+#   nest() |>
+#   drop_na(height_class) |>
+#   mutate(
+#     n_survived = map_dbl(data, ~filter(., revisit_state == "revisited",
+#                                        tree_state_1 == "alive",
+#                                        tree_state_2 == "alive") |> nrow()),
+#     n_died     = map_dbl(data, ~filter(., revisit_state == "revisited",
+#                                        tree_state_1 == "alive",
+#                                        tree_state_2 == "dead") |> nrow()),
+#     n_all      = n_survived + n_died,
+#     mortality  = (1 - (n_survived / n_all) ^ (1 / 5)) * 100
+#   )
+# 
+# df_temp_age <- 
+#   my_data |>
+#   filter(genus_lat %in% my_species_list) |> 
+#   group_by(age_class, campagne_1, genus_lat) |>
+#   nest() |>
+#   drop_na(age_class) |>
+#   mutate(
+#     n_survived = map_dbl(data, ~filter(., revisit_state == "revisited",
+#                                        tree_state_1 == "alive",
+#                                        tree_state_2 == "alive") |> nrow()),
+#     n_died     = map_dbl(data, ~filter(., revisit_state == "revisited",
+#                                        tree_state_1 == "alive",
+#                                        tree_state_2 == "dead") |> nrow()),
+#     n_all      = n_survived + n_died,
+#     mortality  = (1 - (n_survived / n_all) ^ (1 / 5)) * 100
+#   )
 
 # ______________________________________________________________________________
 # UI ----
@@ -301,57 +301,57 @@ ui <- fluidPage(
           # textOutput("debug_text")
         )
       )
-    ),
-    
-    ## Tab: Data Exploration ----
-    tabPanel("Data Exploration",
-             sidebarLayout(
-               sidebarPanel(
-                 selectInput(
-                   "de_my_x",
-                   "Select x variable:",
-                   choices = de_my_x_selection,
-                   selected = "age13"
-                 ),
-                 selectInput(
-                   "de_my_y",
-                   "Select y variable:",
-                   choices = de_my_y_selection,
-                   selected = "htot"
-                 ),
-                 selectInput(
-                   "de_my_g",
-                   "Select grouping variable:",
-                   choices = de_my_g_selection,
-                   selected = "genus_lat"
-                 ),
-                 numericInput(
-                   "de_text_size",
-                   "Change text size of figures:",
-                   value = 20,
-                   step = 0.5
-                 )
-               ),
-               
-               mainPanel(
-                 h1("Data Exploration"),
-                 h2("Scatterplot"),
-                 plotOutput("de_scatter", height = "750px"),
-                 h2("Linear Regression Models"),
-                 tableOutput("de_table"),
-                 h2("Distribution of x-variable"),
-                 plotOutput("de_distr_x", height = "1000px"),
-                 h2("Distribution of y-variable"),
-                 plotOutput("de_distr_y", height = "1000px"),
-                 h2("Distribution of grouping-variable"),
-                 plotOutput("de_distr_g", height = "1000px")
-               )
-             )),
+    )
+    # ,
+    # ## Tab: Data Exploration ----
+    # tabPanel("Data Exploration",
+    #          sidebarLayout(
+    #            sidebarPanel(
+    #              selectInput(
+    #                "de_my_x",
+    #                "Select x variable:",
+    #                choices = de_my_x_selection,
+    #                selected = "age13"
+    #              ),
+    #              selectInput(
+    #                "de_my_y",
+    #                "Select y variable:",
+    #                choices = de_my_y_selection,
+    #                selected = "htot"
+    #              ),
+    #              selectInput(
+    #                "de_my_g",
+    #                "Select grouping variable:",
+    #                choices = de_my_g_selection,
+    #                selected = "genus_lat"
+    #              ),
+    #              numericInput(
+    #                "de_text_size",
+    #                "Change text size of figures:",
+    #                value = 20,
+    #                step = 0.5
+    #              )
+    #            ),
+    #            
+    #            mainPanel(
+    #              h1("Data Exploration"),
+    #              h2("Scatterplot"),
+    #              plotOutput("de_scatter", height = "750px"),
+    #              h2("Linear Regression Models"),
+    #              tableOutput("de_table"),
+    #              h2("Distribution of x-variable"),
+    #              plotOutput("de_distr_x", height = "1000px"),
+    #              h2("Distribution of y-variable"),
+    #              plotOutput("de_distr_y", height = "1000px"),
+    #              h2("Distribution of grouping-variable"),
+    #              plotOutput("de_distr_g", height = "1000px")
+    #            )
+    #          )),
     
     ## Tab: Datatable ----
-    tabPanel("Data", 
-             downloadButton("data_dowload", "Download .tsv"),
-             dataTableOutput("data_table"))
+    # tabPanel("Data", 
+    #          downloadButton("data_dowload", "Download .tsv"),
+    #          dataTableOutput("data_table"))
   )
 )
 
@@ -489,302 +489,302 @@ server <- function(input, output) {
   # ______________________________________________________________________________
   # df_plot
   
-  de_df_plot <- 
-    reactive({
-      # Get input
-      my_x     <- input$de_my_x    
-      my_y     <- input$de_my_y    
-      my_group <- input$de_my_g
-      
-      if (my_group == "none") {
-        df_plot <- 
-          nfi_dataset_for_analysis |> 
-          mutate(
-            x = get(my_x),
-            y = get(my_y)
-          ) |> 
-          select(x, y) |> 
-          drop_na(x, y)
-      } else {
-        df_plot <- 
-          nfi_dataset_for_analysis |> 
-          mutate(
-            x = get(my_x),
-            y = get(my_y),
-            g = get(my_group)
-          ) |> 
-          select(x, y, g) |> 
-          drop_na(x, y, g)
-        
-        top_10 <- 
-          df_plot$g |> 
-          table() |> 
-          sort(TRUE) |> 
-          head(12) |> 
-          as.data.frame() |> 
-          rename(g = Var1, n = Freq) |> 
-          arrange(g)
-        
-        df_plot <- 
-          df_plot |> 
-          filter(g %in% top_10$g) |> 
-          left_join(top_10, by = join_by(g)) |> 
-          mutate(g = as.factor(paste0(g, " (N = ", n,")"))) |> 
-          arrange(g)
-      }
-      
-      df_plot
-    })
-  
-  ## Scatter plot ----
-  output$de_scatter <- renderPlot({
-    # Get input
-    my_x     <- input$de_my_x    
-    my_y     <- input$de_my_y    
-    my_group <- input$de_my_g
-    df_plot  <- de_df_plot()
-    
-    if (my_group == "none") {
-      p <- 
-        df_plot |> 
-        ggplot() +
-        aes(x = x, y = y) +
-        geom_point(alpha = 0.2) +
-        geom_smooth(method = "lm") +
-        labs(
-          x = my_x,
-          y = my_y
-        ) +
-        theme_classic()
-    } else {
-      p <- 
-        df_plot |> 
-        ggplot() +
-        aes(x = x, y = y, group = g) +
-        facet_wrap(~g) +
-        geom_point(alpha = 0.2) +
-        geom_smooth(method = "lm") +
-        labs(
-          x = my_x,
-          y = my_y,
-          color = my_group,
-          fill = my_group
-        ) +
-        theme_classic()
-    }
-    p +
-      theme(
-        legend.position = "bottom",
-        text = element_text(size = input$de_text_size),  # Set the base size
-        title = element_text(size = input$de_text_size * 1.5),  # Increase title size
-        axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
-        axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
-        legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
-      )
-  })
-  
-  ## LM Table ----
-  output$de_table <- renderTable({
-    # Get input
-    my_x     <- input$de_my_x    
-    my_y     <- input$de_my_y    
-    my_group <- input$de_my_g
-    df_plot  <- de_df_plot()
-
-    if (my_group == "none") {    
-      my_lm <- lm(y ~ x, data = df_plot) |> summary()
-      de_table <- 
-        tibble(
-        intercept_est   = my_lm$coefficients[1, 1],
-        slope_est       = my_lm$coefficients[2, 1],
-        slope_se        = my_lm$coefficients[2, 2],
-        slope_pval      = my_lm$coefficients[2, 4],
-        R2              = my_lm$r.squared,
-        adjR2           = my_lm$adj.r.squared)
-      
-    } else {
-      de_table <- 
-        df_plot |>
-        group_by(g) |>
-        nest() |>
-        mutate(
-          lm_result       = map(data, ~lm(y ~ x, data = .)),
-          model_summary   = map(lm_result, ~summary(.)),
-          intercept_est   = map_dbl(model_summary, ~.$coefficients[1, 1]),
-          intercept_se    = map_dbl(model_summary, ~.$coefficients[1, 2]),
-          intercept_pval  = map_dbl(model_summary, ~.$coefficients[1, 4]),
-          slope_est       = map_dbl(model_summary, ~.$coefficients[2, 1]),
-          slope_se        = map_dbl(model_summary, ~.$coefficients[2, 2]),
-          slope_pval      = map_dbl(model_summary, ~.$coefficients[2, 4]),
-          R2              = map_dbl(model_summary, ~.$r.squared),
-          adjR2           = map_dbl(model_summary, ~.$adj.r.squared)
-        ) |> 
-        select(-data, -lm_result, -model_summary, -R2)
-    }
-    de_table
-    
-  })
-  
-  ## Distr ----
-  output$de_distr_x <- renderPlot({
-    # Get input
-    my_x     <- input$de_my_x    
-    my_y     <- input$de_my_y    
-    my_group <- input$de_my_g
-    df_plot  <- de_df_plot()
-    
-    if (my_group == "none") {
-      p <- 
-        df_plot |> 
-        ggplot() +
-        aes(x = x) +
-        geom_density() +
-        geom_boxplot(
-          width = 0.001,
-          color = "grey50",
-          alpha = 0.5,
-          outlier.color = "red"
-        ) +
-        scale_fill_viridis_d() +
-        labs(x = my_x) +
-        theme_classic()
-      
-    } else {
-      p <- 
-        df_plot |> 
-        ggplot() +
-        aes(x = x, y = g, fill = factor(stat(quantile))) +
-        stat_density_ridges(
-          geom = "density_ridges_gradient",
-          scale = 0.85,
-          calc_ecdf = TRUE,
-          quantiles = 4, 
-          quantile_lines = TRUE, 
-          jittered_points = TRUE,
-          position = position_points_jitter(width = 0.05, height = 0, yoffset = -0.1),
-          point_shape = '|', 
-          point_size = 6, 
-          point_alpha = 0.75, 
-          alpha = 0.7
-        ) +
-        scale_fill_viridis_d(name = "Quartiles") +
-        labs(
-          x = my_x,
-          y = my_group
-          ) +
-        theme_classic()
-    }
-    
-      p +
-        theme(
-          legend.position = "bottom",
-          text = element_text(size = input$de_text_size),  # Set the base size
-          title = element_text(size = input$de_text_size * 1.5),  # Increase title size
-          axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
-          axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
-          legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
-        )
-  })
- 
-output$de_distr_y <- renderPlot({
-    # Get input
-    my_x     <- input$de_my_x    
-    my_y     <- input$de_my_y    
-    my_group <- input$de_my_g
-    df_plot  <- de_df_plot()
-    
-    if (my_group == "none") {
-     p <- 
-        df_plot |> 
-        ggplot() +
-        aes(x = y) +
-        geom_density() +
-        geom_boxplot(
-          width = 0.001,
-          color = "grey50",
-          alpha = 0.5,
-          outlier.color = "red"
-        ) +
-        scale_fill_viridis_d() +
-        labs(x = my_y) +
-        theme_classic()
-      
-    } else {
-      p <- 
-        df_plot |> 
-        ggplot() +
-        aes(x = y, y = g, fill = factor(stat(quantile))) +
-        stat_density_ridges(
-          geom = "density_ridges_gradient",
-          scale = 0.85,
-          calc_ecdf = TRUE,
-          quantiles = 4, 
-          quantile_lines = TRUE, 
-          jittered_points = TRUE,
-          position = position_points_jitter(width = 0.05, height = 0, yoffset = -0.1),
-          point_shape = '|', 
-          point_size = 6, 
-          point_alpha = 0.75, 
-          alpha = 0.7
-        ) +
-        scale_fill_viridis_d(name = "Quartiles") +
-        labs(
-          x = my_y,
-          y = my_group
-          ) +
-        theme_classic()
-    }
-    
-      p +
-        theme(
-          legend.position = "bottom",
-          text = element_text(size = input$de_text_size),  # Set the base size
-          title = element_text(size = input$de_text_size * 1.5),  # Increase title size
-          axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
-          axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
-          legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
-        )
-  })
-  
-output$de_distr_g <- renderPlot({
-    # Get input
-    my_x     <- input$de_my_x    
-    my_y     <- input$de_my_y    
-    my_group <- input$de_my_g
-    df_plot  <- de_df_plot()
-    
-    if (my_group == "none") {
-     p <- ggplot()
-      
-    } else {
-      p <- 
-        df_plot |> 
-        ggplot() +
-        aes(y = g) +
-        labs(
-          x = "Count",
-          y = my_group
-        ) +
-        geom_bar() +
-        theme_classic()
-    }
-    
-      p +
-        theme(
-          legend.position = "bottom",
-          text = element_text(size = input$de_text_size),  # Set the base size
-          title = element_text(size = input$de_text_size * 1.5),  # Increase title size
-          axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
-          axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
-          legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
-        )
-  })
-  
-  # Tab: Datatable ----
-  # ______________________________________________________________________________
-  output$data_table <- renderDataTable({
-    my_data
-  })
+#   de_df_plot <- 
+#     reactive({
+#       # Get input
+#       my_x     <- input$de_my_x    
+#       my_y     <- input$de_my_y    
+#       my_group <- input$de_my_g
+#       
+#       if (my_group == "none") {
+#         df_plot <- 
+#           nfi_dataset_for_analysis |> 
+#           mutate(
+#             x = get(my_x),
+#             y = get(my_y)
+#           ) |> 
+#           select(x, y) |> 
+#           drop_na(x, y)
+#       } else {
+#         df_plot <- 
+#           nfi_dataset_for_analysis |> 
+#           mutate(
+#             x = get(my_x),
+#             y = get(my_y),
+#             g = get(my_group)
+#           ) |> 
+#           select(x, y, g) |> 
+#           drop_na(x, y, g)
+#         
+#         top_10 <- 
+#           df_plot$g |> 
+#           table() |> 
+#           sort(TRUE) |> 
+#           head(12) |> 
+#           as.data.frame() |> 
+#           rename(g = Var1, n = Freq) |> 
+#           arrange(g)
+#         
+#         df_plot <- 
+#           df_plot |> 
+#           filter(g %in% top_10$g) |> 
+#           left_join(top_10, by = join_by(g)) |> 
+#           mutate(g = as.factor(paste0(g, " (N = ", n,")"))) |> 
+#           arrange(g)
+#       }
+#       
+#       df_plot
+#     })
+#   
+#   ## Scatter plot ----
+#   output$de_scatter <- renderPlot({
+#     # Get input
+#     my_x     <- input$de_my_x    
+#     my_y     <- input$de_my_y    
+#     my_group <- input$de_my_g
+#     df_plot  <- de_df_plot()
+#     
+#     if (my_group == "none") {
+#       p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(x = x, y = y) +
+#         geom_point(alpha = 0.2) +
+#         geom_smooth(method = "lm") +
+#         labs(
+#           x = my_x,
+#           y = my_y
+#         ) +
+#         theme_classic()
+#     } else {
+#       p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(x = x, y = y, group = g) +
+#         facet_wrap(~g) +
+#         geom_point(alpha = 0.2) +
+#         geom_smooth(method = "lm") +
+#         labs(
+#           x = my_x,
+#           y = my_y,
+#           color = my_group,
+#           fill = my_group
+#         ) +
+#         theme_classic()
+#     }
+#     p +
+#       theme(
+#         legend.position = "bottom",
+#         text = element_text(size = input$de_text_size),  # Set the base size
+#         title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+#         axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+#         axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+#         legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+#       )
+#   })
+#   
+#   ## LM Table ----
+#   output$de_table <- renderTable({
+#     # Get input
+#     my_x     <- input$de_my_x    
+#     my_y     <- input$de_my_y    
+#     my_group <- input$de_my_g
+#     df_plot  <- de_df_plot()
+# 
+#     if (my_group == "none") {    
+#       my_lm <- lm(y ~ x, data = df_plot) |> summary()
+#       de_table <- 
+#         tibble(
+#         intercept_est   = my_lm$coefficients[1, 1],
+#         slope_est       = my_lm$coefficients[2, 1],
+#         slope_se        = my_lm$coefficients[2, 2],
+#         slope_pval      = my_lm$coefficients[2, 4],
+#         R2              = my_lm$r.squared,
+#         adjR2           = my_lm$adj.r.squared)
+#       
+#     } else {
+#       de_table <- 
+#         df_plot |>
+#         group_by(g) |>
+#         nest() |>
+#         mutate(
+#           lm_result       = map(data, ~lm(y ~ x, data = .)),
+#           model_summary   = map(lm_result, ~summary(.)),
+#           intercept_est   = map_dbl(model_summary, ~.$coefficients[1, 1]),
+#           intercept_se    = map_dbl(model_summary, ~.$coefficients[1, 2]),
+#           intercept_pval  = map_dbl(model_summary, ~.$coefficients[1, 4]),
+#           slope_est       = map_dbl(model_summary, ~.$coefficients[2, 1]),
+#           slope_se        = map_dbl(model_summary, ~.$coefficients[2, 2]),
+#           slope_pval      = map_dbl(model_summary, ~.$coefficients[2, 4]),
+#           R2              = map_dbl(model_summary, ~.$r.squared),
+#           adjR2           = map_dbl(model_summary, ~.$adj.r.squared)
+#         ) |> 
+#         select(-data, -lm_result, -model_summary, -R2)
+#     }
+#     de_table
+#     
+#   })
+#   
+#   ## Distr ----
+#   output$de_distr_x <- renderPlot({
+#     # Get input
+#     my_x     <- input$de_my_x    
+#     my_y     <- input$de_my_y    
+#     my_group <- input$de_my_g
+#     df_plot  <- de_df_plot()
+#     
+#     if (my_group == "none") {
+#       p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(x = x) +
+#         geom_density() +
+#         geom_boxplot(
+#           width = 0.001,
+#           color = "grey50",
+#           alpha = 0.5,
+#           outlier.color = "red"
+#         ) +
+#         scale_fill_viridis_d() +
+#         labs(x = my_x) +
+#         theme_classic()
+#       
+#     } else {
+#       p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(x = x, y = g, fill = factor(stat(quantile))) +
+#         stat_density_ridges(
+#           geom = "density_ridges_gradient",
+#           scale = 0.85,
+#           calc_ecdf = TRUE,
+#           quantiles = 4, 
+#           quantile_lines = TRUE, 
+#           jittered_points = TRUE,
+#           position = position_points_jitter(width = 0.05, height = 0, yoffset = -0.1),
+#           point_shape = '|', 
+#           point_size = 6, 
+#           point_alpha = 0.75, 
+#           alpha = 0.7
+#         ) +
+#         scale_fill_viridis_d(name = "Quartiles") +
+#         labs(
+#           x = my_x,
+#           y = my_group
+#           ) +
+#         theme_classic()
+#     }
+#     
+#       p +
+#         theme(
+#           legend.position = "bottom",
+#           text = element_text(size = input$de_text_size),  # Set the base size
+#           title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+#           axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+#           axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+#           legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+#         )
+#   })
+#  
+# output$de_distr_y <- renderPlot({
+#     # Get input
+#     my_x     <- input$de_my_x    
+#     my_y     <- input$de_my_y    
+#     my_group <- input$de_my_g
+#     df_plot  <- de_df_plot()
+#     
+#     if (my_group == "none") {
+#      p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(x = y) +
+#         geom_density() +
+#         geom_boxplot(
+#           width = 0.001,
+#           color = "grey50",
+#           alpha = 0.5,
+#           outlier.color = "red"
+#         ) +
+#         scale_fill_viridis_d() +
+#         labs(x = my_y) +
+#         theme_classic()
+#       
+#     } else {
+#       p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(x = y, y = g, fill = factor(stat(quantile))) +
+#         stat_density_ridges(
+#           geom = "density_ridges_gradient",
+#           scale = 0.85,
+#           calc_ecdf = TRUE,
+#           quantiles = 4, 
+#           quantile_lines = TRUE, 
+#           jittered_points = TRUE,
+#           position = position_points_jitter(width = 0.05, height = 0, yoffset = -0.1),
+#           point_shape = '|', 
+#           point_size = 6, 
+#           point_alpha = 0.75, 
+#           alpha = 0.7
+#         ) +
+#         scale_fill_viridis_d(name = "Quartiles") +
+#         labs(
+#           x = my_y,
+#           y = my_group
+#           ) +
+#         theme_classic()
+#     }
+#     
+#       p +
+#         theme(
+#           legend.position = "bottom",
+#           text = element_text(size = input$de_text_size),  # Set the base size
+#           title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+#           axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+#           axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+#           legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+#         )
+#   })
+#   
+# output$de_distr_g <- renderPlot({
+#     # Get input
+#     my_x     <- input$de_my_x    
+#     my_y     <- input$de_my_y    
+#     my_group <- input$de_my_g
+#     df_plot  <- de_df_plot()
+#     
+#     if (my_group == "none") {
+#      p <- ggplot()
+#       
+#     } else {
+#       p <- 
+#         df_plot |> 
+#         ggplot() +
+#         aes(y = g) +
+#         labs(
+#           x = "Count",
+#           y = my_group
+#         ) +
+#         geom_bar() +
+#         theme_classic()
+#     }
+#     
+#       p +
+#         theme(
+#           legend.position = "bottom",
+#           text = element_text(size = input$de_text_size),  # Set the base size
+#           title = element_text(size = input$de_text_size * 1.5),  # Increase title size
+#           axis.title = element_text(size = input$de_text_size * 1.2),  # Increase axis title size
+#           axis.text = element_text(size = input$de_text_size * 0.8),  # Decrease axis text size
+#           legend.text = element_text(size = input$de_text_size * 0.8)  # Decrease legend text size
+#         )
+#   })
+#   
+#   # Tab: Datatable ----
+#   # ______________________________________________________________________________
+#   output$data_table <- renderDataTable({
+#     my_data
+#   })
 }
 
 # Run the application
