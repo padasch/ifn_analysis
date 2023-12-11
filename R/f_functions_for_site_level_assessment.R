@@ -458,3 +458,85 @@ get_dominant_factor_per_plot <- function(
   return(df)
 }
 
+get_site_metrics_of_top_3_species <- function(
+    df_in = NULL, 
+    vars_in = c("ba_1", "age13", "ir5", "v", "htot"),
+    metrics_in = c("mean", "sd", "range")
+) {
+  
+  # Checks
+  if (is.null(df_in)) stop("df_in needed!")
+  
+  supported_metrics <- c("mean", "sd", "range")
+  for (met in metrics_in) {
+    if (!(met %in% supported_metrics)) {
+      stop(paste0("Requested metric is not supported yet: ", met))
+    }
+  }
+  
+  for (var in vars_in) {
+    if (!(var %in% names(df_in))) {
+      stop(paste0("Requested variable is not in df_in: ", var))
+    }
+  }
+  
+  # Change factor to character because of "none" level if there is no nth species
+  df_in$espar_red <- as.character(df_in$espar_red)
+  
+  # Create empty df
+  df <- tibble(.rows = 1)
+  
+  df["n_species_nfi"] <- length(unique(df_in$espar_red))
+  
+  for (i in 1:3) {
+    df[paste0("top", i, "_species_nfi")] <- "none"
+    for (var in vars_in) {
+      for (metric in metrics_in) {
+        df[paste0("top", i, "_species_", var, "_", metric)] <- NA
+      }
+    }
+  }
+  
+  # Get total basal area:
+  total_ba_1 <- df_in$ba_1 |> sum(na.rm = TRUE)
+  
+  # Get dominant species
+  dom_spec <- 
+    df_in |>
+    group_by(espar_red) |> 
+    summarise(sum = sum(ba_1, na.rm = TRUE)) |> 
+    ungroup() |> 
+    arrange(desc(sum)) |> 
+    slice(1:3) |> 
+    pull(espar_red)
+  
+  # Populate dataframe
+  for (i in 1:length(dom_spec)) {
+    df[paste0("top", i, "_species")] <- dom_spec[i]
+    for (var in vars_in) {
+      for (metric in metrics_in) {
+        
+        my_vec <- df_in |> filter(espar_red == dom_spec[i]) |> pull(!!var)
+        
+        if (metric == "mean") value <- mean(my_vec, na.rm = TRUE)
+        if (metric == "sd")   value <- sd(my_vec, na.rm = TRUE)
+        # cat("\n", "top", i, "_species_", var, "_", metric, ": \t", value, sep = "") # Verbose
+        
+        # Normalise value by the ba_1 of that species so that the value 
+        #  is inter-comparable across the dominant species at different sites
+        #  Alternative: Divide by species ba
+        #  i_ba  <- df_in |> filter(espar_red == dom_spec[i]) |> pull(ba_1) |> sum(na.rm=TRUE)
+        if (metric %in% c("mean", "sd")) value <- value / total_ba_1
+        
+        if (metric == "range") value <- max(my_vec, na.rm = TRUE) - min(my_vec, na.rm = TRUE)
+        
+        df[paste0("top", i, "_species_", var, "_", metric)][1] <- value
+        
+        # To avoid NaN and NA mixing up
+        if (is.nan(value)) value <- NA
+      }
+    }
+  }
+  
+  return(df)
+}
