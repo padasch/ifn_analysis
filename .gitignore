@@ -46,3 +46,9 @@ ifna-venv/*
 # Unwanted folders
 python/04_run_ml_models/model_runs
 python/03_process_france_data/edo_qc_files/heatw_random_sites.png
+
+
+# Other
+R/_backgroundjobs.R
+ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
+*.dcf
