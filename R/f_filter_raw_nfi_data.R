@@ -1,4 +1,5 @@
 filter_raw_nfi_data <- function(
+    nfi_dataset_raw = NULL,
     only_suitable_sites  = TRUE,
     only_suitable_trees  = TRUE,
     remove_shadow_growth = TRUE,
@@ -11,10 +12,11 @@ filter_raw_nfi_data <- function(
     stop("Chosen target_metric not supported yet.")
   }
   
-  # Load latest raw dataset
-  load_or_save_latest_file(nfi_dataset_raw, "load")
-  df_tmp <- nfi_dataset_raw
-  
+  if (is.null(nfi_dataset_raw)){
+    # Load latest raw dataset
+    load_or_save_latest_file(nfi_dataset_raw, "load")
+    df_tmp <- nfi_dataset_raw
+  }
   # Remove faulty ∆ calculations
   df_tmp <- df_tmp |> filter(dbh_change_perc_yr >= -0.05 | is.na(dbh_change_perc_yr)) 
   
@@ -29,10 +31,11 @@ filter_raw_nfi_data <- function(
   df_tmp <- 
     df_tmp |> 
     filter(
-      prelev5  %in% c(0, 1, NA),
-      peupnr_1 %in% c(0, NA),
-      peupnr_2 %in% c(0, NA),
-      csa_1    %in% c(1, 2, 3, 5, NA),
+      # prelev5  %in% c(0, 1, NA),
+      # peupnr_1 %in% c(0, NA),
+      # peupnr_2 %in% c(0, NA),
+      # csa_1    %in% c(1, 2, 3, 5, NA),
+      # Dropping lat lon NA values are less than 0.5% of all sites.
       !is.na(lat),
       !is.na(lon),
     )
