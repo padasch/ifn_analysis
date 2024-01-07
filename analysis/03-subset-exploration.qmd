@@ -223,369 +223,28 @@ df_comb_tree_class$espar_red <- as.factor(numbers)
 compare_dataset_dims(df_comb_tree_state, df_comb_tree_class)
 ```
 
-### Size & age class
+# 🚧 2024-01-07
+> Today, I removed the following calculations to speed this up and transition to python!
+
+Removed:
+  - Size and Age Class
+  - Tree Growth
+  - Shadow Growth
+  - Forest Structure
+  
+Keeping for now:
+  - Land Use
+  - Human Impact
+  - Geographic Information (adding WGS84 coordinates)
+  - Other NFI Data
+  
 ```{r}
-# Define criteria for age breaks
-age_max     <- 100
-age_stepsize <- 15
-
-height_max     <- 25
-height_stepsize <- 5
-  
-age_breaks     <- c(seq(0, age_max, age_stepsize), Inf)
-age_breaks_txt <- c(paste0("<", age_breaks[2:(length(age_breaks) - 1)], "yrs"),
-                    paste0("≥", age_breaks[(length(age_breaks) - 1)], "yrs"))
-
-height_breaks     <- c(seq(0, height_max, height_stepsize), Inf)
-height_breaks_txt <- c(paste0("<", height_breaks[2:(length(height_breaks) - 1)], "m"),
-                       paste0("≥", height_breaks[(length(height_breaks) - 1)], "m"))
-
-df_plus_age_height_classes <- 
-  df_comb_tree_class |> 
-  mutate(
-    age_class    = cut(age13,  age_breaks,    age_breaks_txt, include.lowest = TRUE),
-    height_class = cut(htot,   height_breaks, height_breaks_txt, include.lowest = TRUE)
-    )
-
-compare_dataset_dims(df_comb_tree_class, df_plus_age_height_classes)
-```
-
-### Add Shadow Growth of Circumference
-#### Cut Trees
-```{r}
-# Create temporary df for this section
-df_tmp <- df_plus_age_height_classes
-
-# Split datasets into cut and not cut, and where c13 and ir5 is not NA
-idx <- which(df_tmp$tree_state_2 == "cut" & !is.na(df_tmp$c13_1) & !is.na(df_tmp$ir5))
-
-# Do splitting only if index is not empty
-if (length(idx) != 0) {
-  
-  df_edit <- df_tmp[idx, ] 
-  df_keep <- df_tmp[-idx, ]  
-  
-  # Calculate the circumference achieved until a tree was cut
-  # Calculation based on `ifn_wood_harvest_removal.pdf`
-  df_edit <- 
-    df_edit |> 
-    mutate(c13_2 = c13_1 + ir5/2,
-           shadow_growth = "yes")
-  
-  # Combine datasets again
-  df_comb_shadow_cut <- 
-    bind_rows(
-      df_edit,
-      df_keep |> mutate(shadow_growth = "no")
-      )
-} else {
-  df_comb_shadow_cut <- df_tmp
-}
-
-compare_dataset_dims(df_plus_age_height_classes, df_comb_shadow_cut)
-```
-
-#### Not re-measured dead trees
-```{r}
-df_tmp <- df_comb_shadow_cut
-
-# Create subset for not re-measured dead trees
-idx <- which(df_tmp$tree_state_2 == "dead" & is.na(df_tmp$c13_2) & !is.na(df_tmp$ir5))
-
-# Do splitting only if index is not empty
-if (length(idx) != 0) {
-  
-  df_edit <- df_tmp[idx, ] 
-  df_keep <- df_tmp[-idx, ]  
-  
-  # Calculate the circumference achieved until a tree was cut
-  # Calculation based on `ifn_wood_harvest_removal.pdf`
-  # Drop data if growth could not be back-calculated
-  df_edit <- 
-    df_edit |> 
-    mutate(c13_2 = c13_1 + ir5/2,
-           shadow_growth = "yes")
-  
-  # Combine datasets again
-  df_comb_shadow_dead <- 
-    bind_rows(
-      df_edit,
-      df_keep |> mutate(shadow_growth = "no"))
-} else {
-  df_comb_shadow_dead <- df_tmp
-}
-
-compare_dataset_dims(df_comb_shadow_cut, df_comb_shadow_dead)
-```
-
-#### Not re-measured alive trees
-```{r}
-df_tmp <- df_comb_shadow_dead
-
-# Create subset for not re-measured alive trees
-idx <- which(df_tmp$tree_state_2 == "alive" & is.na(df_tmp$c13_2) & !is.na(df_tmp$ir5))
-
-# Do splitting only if index is not empty
-if (length(idx) != 0) {
-  
-  df_edit <- df_tmp[idx, ] 
-  df_keep <- df_tmp[-idx, ]  
-  
-  # Calculate the circumference achieved until a tree was cut
-  # Calculation based on `ifn_wood_harvest_removal.pdf`
-  # Drop data if growth could not be back-calculated
-  df_edit <- 
-    df_edit |> 
-    mutate(c13_2 = c13_1 + ir5,
-           shadow_growth = "yes")
-  
-  # Combine datasets again
-  df_comb_shadow_alive <- 
-    bind_rows(
-      df_edit,
-      df_keep |> mutate(shadow_growth = "no"))
-} else {
-  df_comb_shadow_alive <- df_tmp
-}
-
-compare_dataset_dims(df_comb_shadow_dead, df_comb_shadow_alive)
-```
-
-### Calculate ∆ C13, DBH, BA
-```{r}
-# Create df_tmp
-df_tmp <- df_comb_shadow_alive
-
-# Attach size related variables
-df_size_change <- 
-  df_tmp |> 
-  # Attach size related variables
-  mutate(
-    # Add plot size variable (plot of radius 25m)
-    plot_area = 25^2 * pi / 10^5, # (25m)^2 * pi / 10000 [m^2/ha] = [ha]
-    
-    # C13
-    c13_change_abs_yr  = ( c13_2 - c13_1 ) / 5,
-    c13_change_perc_yr =  c13_change_abs_yr / c13_1 * 100,
-    
-    # Diameter
-    dbh_1              = c13_1 / pi,
-    dbh_2              = c13_2 / pi,
-    dbh_change_abs_yr  = ( dbh_2 - dbh_1 ) / 5,
-    dbh_change_perc_yr =  dbh_change_abs_yr / dbh_1 * 100,
-    
-    # Basal Area
-    ba_1               = pi * ( dbh_1 / 2 ) ^ 2 / plot_area,
-    ba_2               = pi * ( dbh_2 / 2 ) ^ 2 / plot_area,
-    ba_change_abs_yr   = ( ba_2 - ba_1 ) / 5,
-    ba_change_perc_yr  =  ba_change_abs_yr / ba_1 * 100,
-    
-    # Growth rates
-    avg_growth_height_meter_per_yr = htot / age13,
-    avg_growth_ba_per_year         = ba_1 / age13
-  ) |> 
-  select(-plot_area) |> 
-  
-  # Replace changes in percent with NA for newly sampled trees because their initial size is 
-  # assumed to be zero and dividing by zero gives non-sense infinity.
-  mutate(
-    c13_change_perc_yr = ifelse(c13_change_perc_yr == Inf, NA, c13_change_perc_yr), 
-    dbh_change_perc_yr = ifelse(dbh_change_perc_yr == Inf, NA, dbh_change_perc_yr), 
-    ba_change_perc_yr  = ifelse(ba_change_perc_yr  == Inf, NA, ba_change_perc_yr)
-  )
-
-compare_dataset_dims(df_plus_age_height_classes, df_size_change)
-```
-
-## SITE-LEVEL
-```{r}
-df_before_adding_site_information        <- df_size_change
-df_before_adding_site_information_forest <- df_before_adding_site_information
-```
-
-### General Stand Description
-TODO: Need to discuss which trees should be considered in this general stand description...
-
-```{r}
-# Could be sped up by applying a function once instead of looping multiple times...
-message("Assessing forest conditions takes quite some time...",
-        "\n Read something until it beeps :)")
-
-tic()
-df_siteconditions <-
-  df_before_adding_site_information_forest |>
-  dplyr::select(
-    idp, tree_id,
-    ba_1, ba_2, age13, ir5, v, htot,
-    tree_state_1, tree_state_2, tree_state_change, 
-    species_lat, espar_red, genus_lat, tree_class,
-    sfdorge_1, sfdorge_2, sfgeliv_1, sfgeliv_2, sfgui_1, sfgui_2, acci, sfcoeur, sfpied, deggib
-    ) |> 
-  filter(!str_detect(tree_state_change, "NA")) |>  # <------------------- REMOVES NA TREE STATES ⚠️ 
-  # slice_sample(n=5000) |> # <-------------------------------------------------------- DEBUG SLICE ⚠️
-  nest(data = -idp) |> 
-  mutate(
-    site_total_ba_at_v1  = map_dbl(data, ~pull(., ba_1) |> sum(na.rm = TRUE)),
-    site_total_ba_at_v2  = map_dbl(data, ~pull(., ba_2) |> sum(na.rm = TRUE)),
-    
-    # How much of the standing biomass has been dead at first visit already?
-    site_ba_prc_dead_at_v1 = map_dbl(data, ~filter(., tree_state_1 == "dead") |> pull(ba_1) |> sum(na.rm = TRUE), progress = TRUE),
-    site_ba_prc_dead_at_v1 = site_ba_prc_dead_at_v1 / site_total_ba_at_v1,
-    
-    # How much of the standing biomass has been dead after 5 years?
-    site_ba_prc_dead_at_v2 = map_dbl(data, ~filter(., tree_state_2 == "dead") |> pull(ba_2) |> sum(na.rm = TRUE), progress = TRUE),
-    site_ba_prc_dead_at_v2 = site_ba_prc_dead_at_v2 / site_total_ba_at_v2,
-    
-    # How much of the standing biomass has been cut after 5 years?
-    site_ba_prc_cut_at_v2  = map_dbl(data, ~filter(., tree_state_2 == "cut") |> pull(ba_2) |> sum(na.rm = TRUE), progress = TRUE),
-    site_ba_prc_cut_at_v2  = site_ba_prc_cut_at_v2 / site_total_ba_at_v2,
-    
-    # How much of the standing biomass has grown within 5 years?
-    site_ba_prc_rec_at_v2  = map_dbl(data, ~filter(., tree_state_2 == "alive") |> pull(ba_2) |> sum(na.rm = TRUE), progress = TRUE),
-    site_ba_prc_rec_at_v2  = site_ba_prc_rec_at_v2 / site_total_ba_at_v2
-  )
-
-toc()
-beepr::beep()
-
-compare_dataset_dims(df_before_adding_site_information_forest, df_siteconditions)
-```
-
-### Species-Level
-
-```{r}
-message("Identification of dominant species takes quite some time...",
-        "\n Read something until it beeps :)")
-
-tic()
-df_specdom <- 
-  df_siteconditions |> 
-  mutate(
-    
-    # Metrics of top 3 species
-    species_metrics = map(data, ~get_site_metrics_of_top_3_species(
-      .,
-      vars_in = c("ba_1", "age13", "ir5", "v", "htot"),
-      metrics_in = c("mean", "sd", "range")
-      ), .progress = TRUE),
-    
-    # Dominant tree class # Probably not very important either...
-    dominant_tree_class =
-      map(
-        data,
-        ~get_dominant_factor_per_plot(
-          .,
-          group_var = "tree_class",
-          based_on_ntrees_or_totalba = "totalba"
-        ),
-        .progress = TRUE
-      )
-    ) |> 
-  unnest(c(species_metrics, dominant_tree_class))
-      
-  # OUTCOMMENTED BELOW BECAUSE NOT THAT IMPORTANT BUT KEEPING FOR REMEMBERING      
-  # ------------------------------------------------------------------------------
-  # # Count number of species per plot
-  # # Using latin species
-  # n_species_per_plot_lat = 
-  #   map_dbl(data, ~pull(., species_lat) |> unique() |> length()),
-  # 
-  # # Using nfi species
-  # n_species_per_plot_nfi = 
-  #   map_dbl(data, ~pull(., espar_red) |> unique() |> length())
-  # 
-  # # Species dominance:
-  # dominant_species = 
-  #    map(
-  #      data,
-  #      ~get_dominant_factor_per_plot(
-  #        .,
-  #        group_var = "species_lat", 
-  #        based_on_ntrees_or_totalba = "totalba"
-  #      ),
-  #      .progress = TRUE
-  #    ),
-  # 
-  # # Genus dominance:
-  # dominant_genus = 
-  #    map(
-  #      data,
-  #      ~get_dominant_factor_per_plot(
-  #        .,
-  #        group_var = "genus_lat", 
-  #        based_on_ntrees_or_totalba = "totalba"
-  #      ),
-  #      .progress = TRUE
-  #    ),
-  # 
-  # # NFI species dominance:
-  # dominant_nfispecies = 
-  #    map(
-  #      data,
-  #      ~get_dominant_factor_per_plot(
-  #        .,
-  #        group_var = "espar_red", 
-  #        based_on_ntrees_or_totalba = "totalba"
-  #      ),
-  #      .progress = TRUE
-  #    ),
-  # ) |> 
-  # unnest(c(dominant_genus, dominant_species, dominant_nfispecies, dominant_tree_class))
-  # ------------------------------------------------------------------------------
-
-toc()
-beepr::beep()
-
-compare_dataset_dims(df_siteconditions, df_specdom)
-```
-
-### Tree Conditions
-
-- Add variables from tree data that indicate the presence of different mortality drivers
-- Data was only measured on alive trees, so filtering for alive_alive to speed things up
-
-```{r}
-df_site_tree_conditions <- 
-  df_specdom |> 
-  mutate(
-    ntrees_1 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead")) |> nrow()),
-    ntrees_2 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead", "new_alive")) |> nrow()),
-    
-    perc_trees_burn    = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), acci == "4") |> nrow()) / ntrees_1,
-    perc_trees_game    = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), !(deggib %in% c("0", NA))) |> nrow()) / ntrees_1,
-    perc_trees_footdmg = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), !(sfpied %in% c("0", NA))) |> nrow()) / ntrees_1,
-    perc_trees_rotcore = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), !(sfcoeur %in% c("0", NA))) |> nrow()) / ntrees_1,
-    
-    perc_trees_frost_v1 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), !(sfgeliv_1 %in% c("0", NA))) |> nrow()) / ntrees_1,
-    perc_trees_frost_v2 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead", "new_alive"), !(sfgeliv_2 %in% c("0", NA))) |> nrow()) / ntrees_2,
-    
-    perc_trees_mistletoe_v1 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), !(sfgui_1 %in% c("0", NA))) |> nrow()) / ntrees_1,
-    perc_trees_mistletoe_v2 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead", "new_alive"), !(sfgui_2 %in% c("0", NA))) |> nrow()) / ntrees_2,
-    
-    perc_trees_firrust_v1 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead"), !(sfdorge_1 %in% c("0", NA))) |> nrow()) / ntrees_1,
-    perc_trees_firrust_v2 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead", "new_alive"), !(sfdorge_2 %in% c("0", NA))) |> nrow()) / ntrees_2,
-    
-    # Branch mortality is a bit different because it is an ordinal variable
-    # So, taking the medium value and dividing by number of trees
-    perc_trees_branchmort_v1 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead")) |> pull(mortb_1) |> mean(na.rm=TRUE)) / ntrees_1,
-    perc_trees_branchmort_v2 = map_dbl(data, ~filter(., tree_state_change %in% c("alive_alive", "alive_dead", "new_alive")) |> pull(mortb_2) |> mean(na.rm=TRUE)) / ntrees_2
-  )
-
-compare_dataset_dims(df_site_tree_conditions, df_siteconditions)
-```
-
-
-```{r}
-df_last_chunk <- df_site_tree_conditions
-
-# Merge again with tree-level data for smooth continuation with old code below:
-df_after_adding_site_information_forest <- 
-  df_last_chunk |> 
-  select(-data) |> 
-  right_join(df_before_adding_site_information_forest, by = join_by("idp"))
+# Debug shortcut
+df_after_adding_site_information_forest <- df_comb_tree_class
 ```
 
 ### Land Use
+
 ```{r}
 df_before_adding_site_level_vars <- df_after_adding_site_information_forest
 
@@ -713,12 +372,12 @@ compare_dataset_dims(df_before_adding_site_level_vars, df_after_adding_site_leve
 ```
 
 ```{r}
-columns_only_in_new_df   <- setdiff(names(df_after_adding_site_level_vars), names(df_before_adding_site_information))
-columns_only_in_final_df <- setdiff(names(df_before_adding_site_information), names(df_after_adding_site_level_vars))
-columns_not_in_both      <- base::union(columns_only_in_new_df, columns_only_in_final_df)
-
-# Print or use the result as needed
-message("> New variables added to dataset: \n  - ", paste0(columns_not_in_both, collapse = "\n  - "))
+# columns_only_in_new_df   <- setdiff(names(df_after_adding_site_level_vars), names(df_before_adding_site_information))
+# columns_only_in_final_df <- setdiff(names(df_before_adding_site_information), names(df_after_adding_site_level_vars))
+# columns_not_in_both      <- base::union(columns_only_in_new_df, columns_only_in_final_df)
+# 
+# # Print or use the result as needed
+# message("> New variables added to dataset: \n  - ", paste0(columns_not_in_both, collapse = "\n  - "))
 ```
 
 ## Add other NFI Data
@@ -737,23 +396,25 @@ df_couvert <-
   )
 
 # Extract location-level information from species-level tree coverage data
-stop("the next lines cause error for some reason...")
-df_llcover <-
-  df_couvert |> 
-  select(idp, espar_red, tca, tcl) |> 
-  distinct() |> 
-  nest(data = -idp) |> 
-  mutate(
-    dominant_tca = map(data, ~get_dominant_factor_per_plot(.,group_var = "tca"),.progress = TRUE),
-    dominant_tcl = map(data, ~get_dominant_factor_per_plot(.,group_var = "tcl"),.progress = TRUE)
-  ) |> 
-  unnest(c(dominant_tca, dominant_tcl)) |> 
-  select(-data)
-
-df_couvert_merged <- 
-  df_couvert |> 
-  left_join(df_llcover, by = join_by("idp"))
-
+## 2024-01-07 SKIPPING THIS FOR NOW
+# stop("the next lines cause error for some reason...")
+# df_llcover <-
+#   df_couvert |> 
+#   select(idp, espar_red, tca, tcl) |> 
+#   distinct() |> 
+#   nest(data = -idp) |> 
+#   mutate(
+#     dominant_tca = map(data, ~get_dominant_factor_per_plot(.,group_var = "tca"),.progress = TRUE),
+#     dominant_tcl = map(data, ~get_dominant_factor_per_plot(.,group_var = "tcl"),.progress = TRUE)
+#   ) |> 
+#   unnest(c(dominant_tca, dominant_tcl)) |> 
+#   select(-data)
+# 
+# df_couvert_merged <- 
+#   df_couvert |> 
+#   left_join(df_llcover, by = join_by("idp"))
+# END SKIP
+df_couvert_merged <- df_couvert
 compare_dataset_dims(df_couvert, df_couvert_merged)
 
 # Add information on ecology
