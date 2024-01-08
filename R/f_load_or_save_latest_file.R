@@ -3,7 +3,7 @@ load_or_save_latest_file <- function(data_variable, action = "load") {
   require(here)
   
   data_dir <- here("data")
-  tmp_dir <- here(data_dir, "tmp")
+  tmp_dir <- here(data_dir, "tmp/nfi/from-R")
   
   # Deparse name from data_variable
   data_variable_name <- deparse(substitute(data_variable))

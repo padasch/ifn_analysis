@@ -52,3 +52,5 @@ python/03_process_france_data/edo_qc_files/heatw_random_sites.png
 R/_backgroundjobs.R
 ifna_shiny_app/rsconnect/shinyapps.io/padasch/ifna_shiny_app.dcf
 *.dcf
+python/archive/profiling_results
+qgis/france_dem/derivatives/get_all_derivatives.model3

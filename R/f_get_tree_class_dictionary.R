@@ -113,5 +113,8 @@ get_tree_class_dictionary <- function(l_raw_data, l_metadata) {
     select(lvl_french, tree_class, species_lat, genus_lat, family_lat, order_lat) |> 
     distinct()
   
+  # Save species_dictionary
+  
+  
   return(out)
 }

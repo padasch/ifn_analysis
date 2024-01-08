@@ -20,9 +20,10 @@ import rasterio
 import os
 import shutil
 import geopandas as gpd
+import xarray as xr
 
 
-def GENERAL_FUNCTIONS_____________________________________():
+def ___GENERAL_FUNCTIONS___():
     pass
 
 
@@ -89,7 +90,7 @@ def get_latest_nfi_raw_data():
     # Print working directory
 
     # files = glob.glob(f"{here('data/tmp')}/*nfi_dataset_for_analysis*.csv")
-    files = glob.glob(f"{here('data/tmp')}/*_nfi_dataset_raw.csv")
+    files = glob.glob(f"{here('data/tmp/nfi/from-R')}/*_nfi_dataset_raw.csv")
 
     # Sorting files by date so that the first in list is the latest
     files.sort(reverse=True)
@@ -149,6 +150,30 @@ def get_feature_database_sheet(sheet=None):
 
 
 # -----------------------------------------------------------------------------
+def get_final_nfi_coordinates(noisy_or_corrected=None, geojson_or_csv=None, epsg=None):
+    
+    if noisy_or_corrected == "noisy":
+        if geojson_or_csv == "csv":
+            print("Loading noisy coordinates from csv.")
+            return pd.read_csv(here("data/final/nfi/coords_of_sites_with_idp.csv"), index_col=None)
+        elif geojson_or_csv == "geojson":
+            if epsg == "4326":
+                print("Loading noisy coordinates from geojson EPSG 4326.")
+                return gpd.read_file(here("data/final/nfi/sites_with_idp_epsg4326.geojson"))
+            elif epsg == "2154":
+                print("Loading noisy coordinates from geojson EPSG 2154.")
+                return gpd.read_file(here("data/final/nfi/sites_with_idp_epsg2154.geojson"))
+            else:
+                raise ValueError("Please specify EPSG 4326 or 2154.")
+        else:
+            raise ValueError("Please specify if you want to load geojson or csv.")
+        
+    if noisy_or_corrected == "corrected":
+        raise ValueError("Getting corrected coordinates implemented yet.")
+    
+def get_final_nfi_data_for_analysis():
+    return pd.read_feather(here("data/final/nfi/nfi_ready_for_analysis.feather"))
+
 # -----------------------------------------------------------------------------
 def calculate_growth_mortality(
     df_in,
@@ -167,6 +192,10 @@ def calculate_growth_mortality(
     Returns:
         panda dataframe: mortality metrics per group
     """
+
+    raise ValueError(
+        "This function is depreciated. Use calculate_growth_mortality_optimized() instead."
+    )
 
     # Check if grouping variable is valid
     if grouping_variable not in df_in.columns:
@@ -438,6 +467,184 @@ def calculate_growth_mortality(
     return df_out
 
 
+# -----------------------------------------------------------------------------
+# Turn of formatting just for this function
+# fmt: off
+def calculate_growth_mortality_optimized(
+    df_in,
+    verbose=False,
+    grouping_variable="idp",
+    per_year=True,
+    min_trees_per_plot=None,
+):
+    """
+    Optimized function to calculate growth and mortality metrics for a given input df.
+
+    Args:
+        df_in (pd.DataFrame): Input dataframe.
+        verbose (bool, optional): Verbose output. Defaults to False.
+        divide_by_nplots (bool, optional): Divide metrics by number of plots. Defaults to False.
+        grouping_variable (str, optional): Grouping variable name (grouping done outside, not within the function!). Defaults to "idp".
+        per_year (bool, optional): Calculate metrics per year. Defaults to True.
+        min_trees_per_plot (int, optional): Minimum trees per plot. Defaults to 1.
+
+    Raises:
+        ValueError: If the grouping variable is not in the dataframe.
+
+    Returns:
+        pd.DataFrame: Mortality metrics per group.
+    """
+
+    # Old input check
+        # Check if metrics should be calculated based on min_trees_per_plot
+    if min_trees_per_plot is not None and n_ini < min_trees_per_plot:
+        raise ValueError(f"Depreciated function. Do filtering based on n_trees_per_plot AFTER calling this function.")
+
+    # Check if grouping variable is valid
+    if grouping_variable not in df_in.columns:
+        raise ValueError(f"Grouping variable {grouping_variable} is not in the dataframe.")
+
+    # Get grouping variable
+    my_group = df_in[grouping_variable].unique()[0]
+
+    if verbose:
+        print(f"> Calculating growth and mortality for {grouping_variable}: {my_group}.")
+
+    # Set timespan
+    timespan = 1 / 5 if per_year else 1
+
+    # Remove all trees that were dead at the first visit
+    df_in = df_in[df_in['tree_state_1'] != 'dead']
+    
+    # Subset to relevant columns
+    relevant_cols = list(set([grouping_variable, "idp", "tree_id", "tree_state_1", "tree_state_2", "tree_state_change", "ba_1", "ba_2", "v"]))
+    df_in = df_in[relevant_cols]
+
+    # Compute conditions once
+    alive_1     = df_in['tree_state_1']      == 'alive'
+    alive_2     = df_in['tree_state_2']      == 'alive'
+    alive_alive = df_in['tree_state_change'] == 'alive_alive'
+    alive_dead  = df_in['tree_state_change'] == 'alive_dead'
+    alive_cut   = df_in['tree_state_change'] == 'alive_cut'
+    new_alive   = df_in['tree_state_change'] == 'new_alive'
+
+    # Stem-based metrics
+    # Define stand-metrics dictionary
+    stem_metrics = pd.Series({
+        "n_a1": df_in[alive_1].shape[0],     # a1 = alive at first visit
+        "n_a2": df_in[alive_2].shape[0],     # a2 = alive at second visit                              
+        "n_aa": df_in[alive_alive].shape[0], # aa = alive_alive       
+        "n_ad": df_in[alive_dead].shape[0],  # ad = alive_dead       
+        "n_ac": df_in[alive_cut].shape[0],   # ac = alive_cut   
+        "n_na": df_in[new_alive].shape[0],   # na = new_alive   
+    })
+        
+    # ! Notes:
+    # ! 1.) I am calculation mortality only with respect to the first visit so that we know how much of the initial stand was lost per year. This means that I can also calculate metrics wrt. volume!
+    # ! 2.) The mortality calculations from Hoshino and Esquivel are very similar, so I am only using the Esquivel one.
+    # !     - Esquivel: 1 - (survivors / initals) ** (1 / 5) * 100
+    # !     - Hoshino: ln(initals / survivors) / 5 * 100
+    
+    # Size-based metrics
+    size_metrics = df_in[["ba_1", "ba_2", "v"]].assign(
+        # Basal Area
+        ba_ax_v1 = alive_1 * df_in["ba_1"],
+        ba_ax_v2 = alive_2 * df_in["ba_2"],
+        
+        ba_aa_v1 = alive_alive * df_in["ba_1"],
+        ba_aa_v2 = alive_alive * df_in["ba_2"],
+        
+        ba_ad_v1 = alive_dead * df_in["ba_1"],
+        ba_ac_v1 = alive_cut * df_in["ba_1"],
+        ba_na_v2 = new_alive * df_in["ba_2"],
+        
+        # Volume
+        vol_ax_v1 = alive_1 * df_in["v"],
+        vol_aa_v1 = alive_alive * df_in["v"],
+        vol_ad_v1 = alive_dead * df_in["v"],
+        vol_ac_v1 = alive_cut * df_in["v"],
+        
+    ).sum().drop(["ba_1", "ba_2", "v"], axis=0)
+
+    # Merge stand metrics and size-based metrics
+    sm = pd.concat([stem_metrics, size_metrics])
+
+    # Calculate metrics
+    metrics_of_change = pd.Series({
+        # Mortality
+        # - Stem-Based
+        #   - Esquivel Equation: 1 - (survivors / initals) ** (1 / 5) | How many trees die per year with respect to current population?
+        #   - To separate natural mortality, we need to add the number of trees that were cut to the survivors because they "survived nature"
+        #     And vice versa for the number of trees that were cut.
+        "mort_tot_stems_prc_yr_esq" : np.nan if sm.n_a1 == 0 else (1 - (sm.n_aa / sm.n_a1) ** timespan) * 100,  # Total (natural and human)
+        "mort_nat_stems_prc_yr_esq" : np.nan if sm.n_a1 == 0 else (1 - ((sm.n_aa + sm.n_ac) / sm.n_a1) ** timespan) * 100,  # Natural
+        "mort_cut_stems_prc_yr_esq" : np.nan if sm.n_a1 == 0 else (1 - ((sm.n_aa + sm.n_ad) / sm.n_a1) ** timespan) * 100,  # Human Cutting
+        
+        #   - Simple: How many trees died per year with respect to initial population?
+        #     Here the logic is reversed to the Esquivel equation, because taking the percentage of nd to initial trees
+        "mort_tot_stems_prc_yr" :     np.nan if sm.n_a1 == 0 else (sm.n_ad + sm.n_ac) / sm.n_a1 * timespan * 100,  # Total (natural and human)
+        "mort_nat_stems_prc_yr" :     np.nan if sm.n_a1 == 0 else sm.n_ad / sm.n_a1 * timespan * 100,  # Natural
+        "mort_cut_stems_prc_yr" :     np.nan if sm.n_a1 == 0 else sm.n_ac / sm.n_a1 * timespan * 100,  # Human Cutting
+        
+        # - Size-Based
+        #   Question: Of mortality process types (total, natural, cutting), how much of the initial size alive of subset was lost to that process?
+        #   Note that ba_v1_a is the same as summing up ba_aa_v1, ba_ad_v1, ba_ac_v1
+        #   - Basal Area
+        "mort_tot_ba_yr" :                                  (sm.ba_ad_v1 + sm.ba_ac_v1) * timespan,
+        "mort_tot_ba_prc_yr" : np.nan if sm.ba_ax_v1 == 0 else (sm.ba_ad_v1 + sm.ba_ac_v1) * timespan / sm.ba_ax_v1 * 100,
+        
+        "mort_nat_ba_yr" :                                  sm.ba_ad_v1 * timespan,
+        "mort_nat_ba_prc_yr" : np.nan if sm.ba_ax_v1 == 0 else sm.ba_ad_v1 * timespan / sm.ba_ax_v1 * 100,
+        
+        "mort_cut_ba_yr" :                                  sm.ba_ac_v1 * timespan,
+        "mort_cut_ba_prc_yr" : np.nan if sm.ba_ax_v1 == 0 else sm.ba_ac_v1 * timespan / sm.ba_ax_v1 * 100,
+        
+        #  - Volume
+        "mort_tot_vol_yr" :                                   (sm.vol_ad_v1 + sm.vol_ac_v1) * timespan,
+        "mort_tot_vol_prc_yr" : np.nan if sm.vol_ax_v1 == 0 else (sm.vol_ad_v1 + sm.vol_ac_v1) * timespan / sm.vol_ax_v1 * 100,
+        
+        "mort_nat_vol_yr" :                                   sm.vol_ad_v1 * timespan,
+        "mort_nat_vol_prc_yr" : np.nan if sm.vol_ax_v1 == 0 else sm.vol_ad_v1 * timespan / sm.vol_ax_v1 * 100,
+        
+        "mort_cut_vol_yr" :                                   sm.vol_ac_v1 * timespan,
+        "mort_cut_vol_prc_yr" : np.nan if sm.vol_ax_v1 == 0 else sm.vol_ac_v1 * timespan / sm.vol_ax_v1 * 100,
+        
+        # Growth (de-coupled from mortality!)
+        # - Stem-Based | Hoshino Equation: ln(finals / survivors) / 5
+        "grwt_stems_prc_yr" : np.nan if sm.n_aa == 0 else np.log(sm.n_a2 / sm.n_aa) * timespan * 100,
+
+        # - Size-Based (only doable for basal area, because volume is not available for the second visit)
+        #   - Total Growth
+        "grwt_tot_ba_yr":                                         (sm.ba_aa_v2 - sm.ba_aa_v1 + sm.ba_na_v2) * timespan, # Difference of survivors between v1 and v2 plus all of v2 of new trees
+        "grwt_tot_ba_prc_yr":     np.nan if sm.ba_aa_v1 == 0 else (sm.ba_aa_v2 - sm.ba_aa_v1 + sm.ba_na_v2) * timespan / sm.ba_aa_v1 * 100,
+        "grwt_tot_ba_prc_yr_hos": np.nan if sm.ba_aa_v1 == 0 else np.log((sm.ba_aa_v2 + sm.ba_na_v2) / sm.ba_aa_v1) * timespan * 100,
+        
+        "grwt_sur_ba_yr":                                         (sm.ba_aa_v2 - sm.ba_aa_v1) * timespan,
+        "grwt_sur_ba_prc_yr":     np.nan if sm.ba_aa_v1 == 0 else (sm.ba_aa_v2 - sm.ba_aa_v1) * timespan / sm.ba_aa_v1 * 100,
+        "grwt_sur_ba_prc_yr_hos": np.nan if sm.ba_aa_v1 == 0 else np.log(sm.ba_aa_v2 / sm.ba_aa_v1) * timespan * 100,
+        
+        "grwt_rec_ba_yr":                                         sm.ba_na_v2 * timespan,
+        "grwt_rec_ba_prc_yr":     np.nan if sm.ba_aa_v1 == 0 else sm.ba_na_v2 * timespan / sm.ba_aa_v1 * 100,
+        
+        # Change of alive biomass (How has the total alive biomass changed over time?)
+        "change_tot_ba_yr":                                       (sm.ba_ax_v2 - sm.ba_ax_v1) * timespan,
+        "change_tot_ba_prc_yr":   np.nan if sm.ba_ax_v1 == 0 else (sm.ba_ax_v2 - sm.ba_ax_v1) * timespan / sm.ba_ax_v1 * 100,
+    })
+
+    # Combine all metrics
+    df_out = pd.DataFrame({grouping_variable: my_group, 
+                           "n_plots": df_in["idp"].nunique()},index=[0])
+    df_out = df_out.assign(**sm, **metrics_of_change)
+    df_out.insert(0, "n_plots", df_out.pop("n_plots"))
+    df_out.insert(0, grouping_variable, df_out.pop(grouping_variable))
+
+    return df_out
+
+
+# Example usage (Note: df_in should be a properly formatted pandas DataFrame)
+# df_out = calculate_growth_mortality_optimized(df_in)
+# Turn formatting on again
+# fmt: on
 # -----------------------------------------------------------------------------
 def extract_nspecies(df_in, species_vars=["espar_red", "species_lat", "genus_lat"]):
     df_out = pd.DataFrame({"group_id": df_in["group_id"].unique()})
@@ -909,7 +1116,6 @@ def attach_regional_information(df_in, verbose=False):
 
     return df_in
 
-
 # -----------------------------------------------------------------------------
 def split_df_into_list_of_group_or_ns(df_in, group_variable=10):
     if type(group_variable) == int:
@@ -938,9 +1144,469 @@ def split_df_into_list_of_group_or_ns(df_in, group_variable=10):
 # -----------------------------------------------------------------------------
 
 
-def RASTER_WRANGLING_FUNCTIONS_____________________________________():
+def ___MAKE_MAPS___():
     pass
 
+def make_plots_per_file_parallel(
+    file_group,
+    run_only_subset=True,
+    subset_fraction=None,
+    method=None,
+    verbose=False,
+):
+    for my_file in file_group:
+        make_plots_per_file(
+            my_file=my_file,
+            method=method,
+            run_only_subset=run_only_subset,
+            subset_fraction=subset_fraction,
+            verbose=verbose,
+        )
+
+def make_plots_per_file(my_file, method, run_only_subset, subset_fraction, verbose=False):
+    # ! Preparation ---------------------------------------------------------------
+    if method != "direct":
+        raise ValueError("Only direct method is currently implemented")
+
+    sp_france = get_shp_of_region("cty")  # Get shapefile of france
+
+    # Extract species and region from filename
+    my_species = my_file.split("/")[-1].split("_")[1].split("-")[0]
+    my_region = my_file.split("/")[-1].split("_")[-1].split(".")[0].split("-")[1]
+
+    # Set dir for plots
+    # ? Debugging: Change output folder...
+    if run_only_subset:
+        my_dir = here(
+            f"python/00_process_nfi_data/maps_of_change/{method}/subset_{round(subset_fraction*100)}%_of_sites/species-{my_species}_region-{my_region}"
+        )
+    else:
+        my_dir = here(
+            f"python/00_process_nfi_data/maps_of_change/{method}/species-{my_species}_region-{my_region}"
+        )
+
+    # Create dir if not exists
+    os.makedirs(my_dir, exist_ok=True)
+
+    # ! Read file  ---------------------------------------------------------------
+    df_loop = pd.read_feather(my_file)
+
+    # todo: If method is not direct, then I have to rename variables so that _sd are dropped and _mean removed from variable name!
+
+    # Plot distribution of n_plots per region_year
+    fig, ax = plt.subplots(figsize=(12, 4))
+    df_loop["n_plots"].plot(kind="hist", bins=50, ax=ax).set_title(
+        f"Distribution of n_plots per {my_region} and year"
+    )
+    plt.savefig(
+        f"{my_dir}/_distribution_of_nplots.png",
+        dpi=300,
+    )
+    plt.close(fig)
+
+    # ! Prepare plotting data ---------------------------------------------------------------
+    # Get shapefile and clean merging variables
+    sp_loop = get_shp_of_region(my_region)
+    sp_loop["year"] = sp_loop["year"].astype(int)
+    sp_loop[my_region] = sp_loop[my_region].astype(str)
+    sp_loop[f"{my_region}_year"] = (
+        sp_loop[f"{my_region}"] + "_" + sp_loop["year"].astype(str)
+    )
+    sp_loop = sp_loop.reset_index(drop=True)
+
+    # Clean merging variables in df_loop
+    df_loop[my_region] = df_loop[f"{my_region}_year"].str.split("_").str[0]
+    df_loop["year"] = df_loop[f"{my_region}_year"].str.split("_").str[1].astype(int)
+    df_loop[f"{my_region}_year"] = (
+        df_loop[f"{my_region}"] + "_" + df_loop["year"].astype(str)
+    )
+    df_loop = df_loop.reset_index(drop=True)
+
+    # Attach df to shapefile
+    df_loop = df_loop.merge(
+        sp_loop, how="right", on=[f"{my_region}_year", "year", my_region]
+    )
+    df_loop = df_loop.reset_index(drop=True)
+    df_loop = gpd.GeoDataFrame(df_loop, geometry="geometry")
+
+    # ! Calculate change relative to 2010 ---------------------------------------------------
+    # Get metrics
+    all_metrics = (
+        # [x for x in df_loop.columns if "mort" in x]
+        [x for x in df_loop.columns if "grwt" in x]
+        + [x for x in df_loop.columns if "change" in x]
+    )
+
+    # Loop over every region-tile
+    diff_abs = pd.DataFrame()
+    diff_rel = pd.DataFrame()
+
+    for i_region in df_loop[my_region].unique():
+        # Get the data for the current region-tile
+        idf_region = df_loop[df_loop[my_region] == i_region]
+        # display(idf_region.n_plots.isna().sum())
+        # display(idf_region.shape[0])
+
+        # Get the data for the year 2010, subset to metrics
+        data_2010 = idf_region[idf_region["year"] == 2010].reset_index(drop=True)[
+            all_metrics
+        ]
+
+        # If there is no data for 2010, skip the region-tile
+        # if data_2010.dropna().shape[0] == 0:
+        #     continue
+
+        # Loop over all years
+        for i_year in df_loop["year"].unique():
+            # Skip the year 2010
+            if i_year == 2010:
+                continue
+            # Get the data for the current year, subset to metrics
+            data_year = idf_region[idf_region["year"] == i_year].reset_index(drop=True)[
+                all_metrics
+            ]
+
+            # If there is no data for the current year, skip it
+            if data_year.dropna().shape[0] == 0:
+                continue
+
+            # if i_year == 2012:
+            #     raise ValueError("Debugging Stop")
+
+            # Calculate the absolute and relative differences
+            i_abs = data_year.subtract(data_2010)
+            i_rel = i_abs.divide(data_2010) * 100
+
+            # Add the region and year to the results
+            i_abs[my_region] = i_region
+            i_abs["year"] = i_year
+            i_abs[f"{my_region}_year"] = f"{i_region}_{i_year}"
+
+            i_rel[my_region] = i_region
+            i_rel["year"] = i_year
+            i_rel[f"{my_region}_year"] = f"{i_region}_{i_year}"
+
+            # Add the results to the main DataFrames
+            diff_abs = pd.concat([diff_abs, i_abs], ignore_index=True)
+            diff_rel = pd.concat([diff_rel, i_rel], ignore_index=True)
+
+    # Clean infities and index
+    diff_rel = diff_rel.replace([np.inf, -np.inf], np.nan)
+    diff_abs.reset_index(drop=True)
+    diff_rel.reset_index(drop=True)
+
+    # Subset shapefile
+    sp_tmp = sp_loop.query("year != 2010")[["year", f"{my_region}_year", "geometry"]]
+
+    # Attach geometry data
+    diff_abs_sp = diff_abs.merge(sp_tmp, on=["year", f"{my_region}_year"], how="right")
+    diff_rel_sp = diff_rel.merge(sp_tmp, on=["year", f"{my_region}_year"], how="right")
+
+    # ! Loop over all metrics ---------------------------------------------------------------
+    idebug = 0
+    for my_var in tqdm(all_metrics, disable=True):
+        # print(f" - Working on: {my_var} | {my_dir}", end=" | ")
+
+        # Get figure dictionary for variable
+        fig_dic = figure_dictionary_for_variable(my_var, my_species)
+
+        # * Plot normal yearly figure
+        make_map_of_change(
+            df_loop,
+            fig_dic,
+            sp_france,
+            my_dir,
+        )
+
+        # * Absolute change
+        make_map_of_change(
+            diff_abs_sp,
+            figure_dictionary_for_variable(
+                my_var, my_species, change_to_2010="absolute"
+            ),
+            sp_france,
+            my_dir,
+        )
+
+        # * Relative change
+        make_map_of_change(
+            diff_rel_sp,
+            figure_dictionary_for_variable(
+                my_var, my_species, change_to_2010="relative"
+            ),
+            sp_france,
+            my_dir,
+        )
+
+        idebug = idebug + 1
+        # if idebug > 3:
+        #     break
+            # raise ValueError("Debugging Stop")
+
+def figure_dictionary_for_variable(my_var, my_species, change_to_2010=None):
+    # Variable
+    fig_dic = {"var": my_var}
+
+    # * Title
+    # Species
+    if my_species == "all":
+        fig_dic["species"] = "All Species"
+    else:
+        fig_dic["species"] = my_species.capitalize()
+
+    # Mortality
+    if "mort" in my_var:
+        if change_to_2010 is None:
+            fig_dic["cmap"] = plt.cm.Reds
+        else:
+            fig_dic["cmap"] = plt.cm.RdBu_r
+        if "tot" in my_var:
+            fig_dic["change"] = "Total Loss"
+            fig_dic["main"] = fig_dic["change"] + " of " + fig_dic["species"]
+        elif "nat" in my_var:
+            fig_dic["change"] = "Mortality"
+            fig_dic["main"] = fig_dic["change"] + " of " + fig_dic["species"]
+        elif "cut" in my_var:
+            fig_dic["change"] = "Harvest"
+            fig_dic["main"] = fig_dic["change"] + " of " + fig_dic["species"]
+
+    # Growth
+    if "grwt" in my_var:
+        fig_dic["change"] = "Gain"
+        if change_to_2010 is None:
+            fig_dic["cmap"] = plt.cm.Greens
+        else:
+            fig_dic["cmap"] = plt.cm.RdBu
+        if "tot" in my_var:
+            fig_dic["main"] = f"Total Growth of " + fig_dic["species"]
+        elif "sur" in my_var:
+            fig_dic["main"] = f"Survivor Growth of " + fig_dic["species"]
+        elif "rec" in my_var or "stems" in my_var:
+            fig_dic["main"] = f"Recruits Growth of " + fig_dic["species"]
+
+    # Change
+    if "change" in my_var:
+        fig_dic["change"] = "Change"
+        fig_dic["cmap"] = plt.cm.RdBu
+        fig_dic["main"] = f"Total Change of Alive Biomass of " + fig_dic["species"]
+        if change_to_2010 in ["absolute", "relative"]:
+            fig_dic[
+                "main"
+            ] = "Ignore this plot (showing change of change in alive biomass)"
+
+    # If change to 2010, then change title
+    if change_to_2010 == "absolute":
+        fig_dic["main"] = "Absolute Change of " + fig_dic["main"]
+
+    if change_to_2010 == "relative":
+        fig_dic["main"] = "Relative Change of " + fig_dic["main"]
+
+    # * Colorbar
+    if "change" in my_var or change_to_2010 is not None:
+        fig_dic["default_cbar"] = False
+    else:
+        fig_dic["default_cbar"] = True
+
+    # * Legend
+    fig_dic["legend"] = fig_dic["change"]
+    if "stems_prc_yr" in my_var:
+        fig_dic["legend"] = fig_dic["legend"] + " [%-stems yr$^{-1}$]"
+    elif "ba_yr" in my_var:
+        fig_dic["legend"] = fig_dic["legend"] + " [m$^{2}$ yr$^{-1}$]"
+    elif "ba_yr_prc":
+        fig_dic["legend"] = fig_dic["legend"] + " [%-m$^{2}$ yr$^{-1}$]"
+    elif "vol_yr" in my_var:
+        fig_dic["legend"] = fig_dic["legend"] + " [m$^{3}$ yr$^{-1}$]"
+    elif "vol_yr_prc":
+        fig_dic["legend"] = fig_dic["legend"] + " [%-m$^{3}$ yr$^{-1}$]"
+
+    if change_to_2010 is not None:
+        # Pick if relative or absolute
+        pref = "Absolute" if change_to_2010 == "absolute" else "Relative"
+        prct = "% of " if change_to_2010 == "relative" else ""
+        fig_dic["legend"] = pref + " Change of " + fig_dic["change"]
+        if "stems_prc_yr" in my_var:
+            fig_dic["legend"] = fig_dic["legend"] + f" [{prct}%-stems yr$^{-1}$]"
+        elif "ba_yr" in my_var:
+            fig_dic["legend"] = fig_dic["legend"] + f" [{prct}m$^{2}$ yr$^{-1}$]"
+        elif "ba_yr_prc":
+            fig_dic["legend"] = fig_dic["legend"] + f" [{prct}%-m$^{2}$ yr$^{-1}$]"
+        elif "vol_yr" in my_var:
+            fig_dic["legend"] = fig_dic["legend"] + f" [{prct}m$^{3}$ yr$^{-1}$]"
+        elif "vol_yr_prc":
+            fig_dic["legend"] = fig_dic["legend"] + f" [{prct}%-m$^{3}$ yr$^{-1}$]"
+
+    # * Plot directory
+    fig_dic["dir"] = "no_change"
+    if change_to_2010 == "absolute":
+        fig_dic["dir"] = "absolute_change"
+    if change_to_2010 == "relative":
+        fig_dic["dir"] = "relative_change"
+
+    return fig_dic
+
+
+def make_map_of_change(
+    df_in,
+    fig_dic,
+    sp_france,
+    fig_dir,
+    overwrite=True,
+):
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    import geopandas as gpd
+    import numpy as np
+    import matplotlib.colors as colors
+    import matplotlib.colors as mcolors
+    from matplotlib.colors import LinearSegmentedColormap
+
+    # ! DEBUGGING ---------------------------------------------------------------
+    # check if file already exists
+    # Update input dictionary
+    fig_dir = f"{fig_dir}/{fig_dic['dir']}"
+    filepath = f"{fig_dir}/{fig_dic['var']}.png"
+    if os.path.isfile(filepath) and not overwrite:
+        print(f"\t\t - File already exists: {filepath}, skipping it")
+        return
+
+    # Load the data
+    gdf = df_in.copy()
+
+    # Make sure gdf is a GeoDataFrame
+    gdf = gpd.GeoDataFrame(gdf, geometry="geometry")
+
+    # Unique years to create subplots for
+    unique_years = sorted(gdf["year"].unique())
+    n_years = len(unique_years)
+
+    # Use some nice font
+    plt.rcParams["font.sans-serif"] = "DejaVu Sans"
+
+    # Set up figure and GridSpec
+    n_cols = int(np.ceil(n_years / 2))  # Make sure to fit on two rows
+    fig = plt.figure(figsize=(15, 8))
+
+    # Allocate the last column for the colorbar and use 2x2 grid for the rest
+    gs = gridspec.GridSpec(
+        2,
+        n_cols + 1,
+        height_ratios=[1, 1],
+        width_ratios=np.repeat(1, n_cols).tolist() + [0.025],
+    )
+
+    # ! Color normalization and colormap ------------------------------------------
+    if fig_dic["default_cbar"]:
+        # Default
+        
+        # Taking 95 percentile to avoid outliers dominating coloring 
+        # data_max = gdf[fig_dic["var"]].max()
+        data_max = np.percentile(gdf[fig_dic["var"]].dropna(), 95)
+        data_min = 0
+        
+        cbar_extend = "max"
+        norm = colors.Normalize(vmin=data_min, vmax=data_max)
+        sm = plt.cm.ScalarMappable(cmap=fig_dic["cmap"], norm=norm)
+
+    else:
+        # Taking 5 and 95 percentile to avoid outliers dominating coloring
+        # data_min = gdf[fig_dic["var"]].min()
+        # data_max = gdf[fig_dic["var"]].max()
+        data_min = np.percentile(gdf[fig_dic["var"]].dropna(), 1)
+        data_max = np.percentile(gdf[fig_dic["var"]].dropna(), 99)
+
+        abs_max = max(abs(data_max), abs(data_min))
+        # norm = colors.Normalize(vmin=-abs_max, vmax=abs_max)
+        cbar_extend = "both"
+        norm = colors.TwoSlopeNorm(vmin=-abs_max, vcenter=0, vmax=abs_max)
+        sm = plt.cm.ScalarMappable(cmap=fig_dic["cmap"], norm=norm)
+
+    # ! Iterate over the years and create a subplot for each -----------------------
+    for i, year in enumerate(unique_years):
+        ax = fig.add_subplot(gs[i // n_cols, i % n_cols])
+
+        # Filter the data for the year and plot
+        data_for_year = gdf[gdf["year"] == year]
+        # Plot it
+        plot = data_for_year.plot(
+            column=fig_dic["var"],
+            edgecolor="face",
+            linewidth=0.5,
+            ax=ax,
+            cmap=fig_dic["cmap"],
+            norm=norm,
+            missing_kwds={
+                "color": "lightgrey",
+                "edgecolor": "lightgrey",
+                "linewidth": 0.5,
+            },
+        )
+
+        # Add countour of France
+        sp_france.plot(ax=ax, color="none", edgecolor="black", linewidth=0.5)
+
+        # Remove axis
+        ax.set_axis_off()
+
+        # Add year as text below the map
+        ax.text(
+            0.5, 0, str(year), transform=ax.transAxes, ha="center", fontweight="bold"
+        )
+
+    # ! Add colorbar --------------------------------------------------------------
+    # Create a colorbar in the space of the last column of the first row
+    # Span both rows in the last column for the colorbar
+    cbar_ax = fig.add_subplot(gs[0:2, n_cols])
+    cbar = fig.colorbar(sm, cax=cbar_ax, extend = cbar_extend)
+    cbar.set_label(fig_dic["legend"])
+
+    # ! Finish up -----------------------------------------------------------------
+    # Adjust layout to accommodate the main title and subplots
+    plt.tight_layout(rect=[0, 0, 1, 1])
+
+    # After creating your subplots and before showing or saving the figure
+    fig.suptitle(fig_dic["main"], fontsize=16, fontweight="bold", position=(0.5, 1.05))
+
+    # Show/save the figure
+    # plt.show()
+    
+    os.makedirs(fig_dir, exist_ok=True)
+    plt.savefig(filepath, bbox_inches="tight", pad_inches=0.1, dpi=300)
+    plt.close()
+    # print(f"\t\t - Map saved to: {filepath}")
+    
+    # ! Also save plotted data as feather for later checks -----------------------------
+    # CSV is too slow, so saving as feather but limits quicks checks...
+    # gdf.to_feather(f"{fig_dir}/{fig_dic['var']}.feather", index=False)
+
+# ------------------------------------------------------------------------------------------
+def get_shp_of_region(region):
+    # Get corresponding shapefile
+    if region == "cty":
+        sp = gpd.read_file(here("data/raw/maps/france_geojson/cty.geojson"))
+    if region == "reg":
+        sp = gpd.read_file(here("data/raw/maps/france_geojson/reg.geojson"))
+    if region == "dep":
+        sp = gpd.read_file(here("data/raw/maps/france_geojson/dep.geojson"))
+    if region == "gre":
+        sp = gpd.read_file(here("data/raw/maps/france_geojson/gre.geojson"))
+    if region == "ser":
+        sp = gpd.read_file(here("data/raw/maps/france_geojson/ser.geojson"))
+    if region == "hex":
+        sp = load_hexmap()
+
+    sp["year"] = 2010
+
+    for year in range(2011, 2017):
+        sp_i = sp.copy()
+        sp_i["year"] = year
+        sp = pd.concat([sp, sp_i])
+
+    sp = sp.drop_duplicates().reset_index(drop=True)
+    return sp
+
+def ___RASTER___():
+    pass
 
 # ------------------------------------------------------------------------------------------
 
@@ -953,6 +1619,22 @@ def extract_raster_values(
     progress_bar=False,
     expected_crs=None,
 ):
+    
+    """
+    Extracts raster values from a TIFF file at specified latitude and longitude coordinates.
+
+    Args:
+        tiff_file (str): The path to the TIFF file.
+        variable_name (str): The name of the variable being extracted.
+        latitudes (list): A list of latitude coordinates.
+        longitudes (list): A list of longitude coordinates.
+        progress_bar (bool, optional): Whether to display a progress bar during extraction. Defaults to False.
+        expected_crs (str, optional): The expected Coordinate Reference System (CRS) of the input coordinates. Defaults to None.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the extracted values, latitudes, and longitudes.
+    """
+    
     if expected_crs is None:
         print(
             f"\t🚧 WARNING: No CRS specified. Make sure inputed coordinates have matching CRS!."
@@ -1082,7 +1764,7 @@ def parallel_agroparistech_extraction(
     else:
         return df_all
 
-
+#-----------------------------------------------------------------------------------
 def extract_closest_soil_polygon_parallel(group_in, soil_sites):
     df_all = pd.DataFrame()
 
@@ -1179,6 +1861,41 @@ def wrapper_for_large_files(
     # os.remove(tif_in_tmp)
 
     return df
+
+def parallel_hansen2013_extraction(
+        group_in, 
+        verbose=False,
+        ):
+
+    # Extract values from raster
+    df_tc = extract_raster_values(
+        here(f"data/raw/hansen2013_treecover_france/treecover_merged_in_python.tif"),
+        "treecover",
+        group_in["y"],
+        group_in["x"],
+        progress_bar=verbose,
+        expected_crs="4326",
+    )
+    
+    # Extract values from raster
+    df_ly = extract_raster_values(
+        here(f"data/raw/hansen2013_treecover_france/lossyear_merged_in_python.tif"),
+        "lossyear",
+        group_in["y"],
+        group_in["x"],
+        progress_bar=verbose,
+        expected_crs="4326",
+    )
+    
+    # Merge them
+    df_merged = pd.merge(df_tc, df_ly)
+    
+    # Rename columns, merge and return
+    df_merged = df_merged.rename(columns={"Latitude": "y", "Longitude": "x"})
+    
+    # Merge again
+    df_merged = df_merged.merge(group_in, on=["y", "x"], how="left")
+    return df_merged
 
 
 # ------------------------------------------------------------------------------------------
@@ -1365,7 +2082,7 @@ def get_seasonal_aggregates(
 
             # Loop through seasons
             for my_season in df_in["season"].unique():
-                var_name = my_fct + "_of_" + my_var + "_in_" + my_season
+                var_name = my_var + "_" + my_fct + "_in_" + my_season
                 my_value = df_tmp[my_season]
                 # print(var_name, ':', my_value)
                 df_outside[var_name] = my_value
@@ -1641,11 +2358,9 @@ def safran_extract_from_index(ds_in, latloc, lonloc):
     return point_ds.data.item()
 
 
-def safran_extract_data_per_site(
-    nc_filepath, sites_in, timestep, only_means=False, verbose=False
-):
+def safran_extract_data_per_site(sites_in, nc_filepath, timestep, verbose=False):
     # Open netcdf dataset
-    ds_org = xr.open_dataset(nc_filepath)
+    ds_org = xr.open_dataset(nc_filepath, engine="netcdf4")
     # List of all variables
     # - Tair
     # - Qair
@@ -1657,19 +2372,24 @@ def safran_extract_data_per_site(
     # - LWdown
 
     # Attach new variables
+    if verbose:
+        print(" - Attaching new variables...")
     # - Total Precipitation
     ds_org["Precip"] = ds_org["Rainf"] + ds_org["Snowf"]
     # - Saturation Vapor Pressure
-    ds_test["SVP"] = 0.6108 * np.exp(
-        (17.27 * ds_test["Tair"]) / (ds_test["Tair"] + 237.3)
-    )
+    ds_org["SVP"] = 0.6108 * np.exp((17.27 * ds_org["Tair"]) / (ds_org["Tair"] + 237.3))
     # - Actual Vapor Pressure
-    ds_test["AVP"] = (ds_test["Qair"] * ds_test["PSurf"]) / (
-        0.622 + 0.378 * ds_test["Qair"]
+    ds_org["AVP"] = (ds_org["Qair"] * ds_org["PSurf"]) / (
+        0.622 + 0.378 * ds_org["Qair"]
     )
     # - Vapor Pressure Deficit
-    ds_test["VPD"] = ds_test["SVP"] - ds_test["AVP"]
+    ds_org["VPD"] = ds_org["SVP"] - ds_org["AVP"]
 
+    # Aggregate to timestep of interest
+    # Ignore RuntimeWarning
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    if verbose:
+        print(f" - Aggregating data to {timestep}...")
     # Get ds of means
     ds_means = (
         ds_org[
@@ -1694,10 +2414,10 @@ def safran_extract_data_per_site(
                 "PSurf",
             ]
         ]
-        .groupby(f"tstep.{timestep}").
+        .groupby(f"tstep.{timestep}")
         .min("tstep")
     )
-    
+
     # Get ds of max
     ds_max = (
         ds_org[
@@ -1708,10 +2428,10 @@ def safran_extract_data_per_site(
                 "Wind",
             ]
         ]
-        .groupby(f"tstep.{timestep}").
+        .groupby(f"tstep.{timestep}")
         .max("tstep")
     )
-    
+
     # Get ds of sum
     ds_sum = (
         ds_org[
@@ -1723,256 +2443,125 @@ def safran_extract_data_per_site(
         .sum("tstep")
     )
 
+    # Reset warnings
+    warnings.resetwarnings()
+
     # Loop over coordinates
+    if verbose:
+        print(f" - Looping over {sites_in.shape[0]} sites...")
+
+    df_final = pd.DataFrame()
     for i in tqdm(range(sites_in.shape[0]), disable=not verbose):
         # Get closest point
         lat = sites_in["y"].iloc[i]
         lon = sites_in["x"].iloc[i]
         latloc, lonloc = safran_get_closest_point(ds_org, lat, lon)
-        # EXTRACT DATA
-        # DAILY MEANS ---------------------------------------------------------------
-        ds_daily_mean = ds_org.groupby("tstep.dayofyear").mean("tstep")
 
-        # Temperature
-        if verbose:
-            print(" - Extracting daily mean temperature...")
-        df_tair_mean = safran_extract_all_timesteps(
-            ds_daily_mean["Tair"],
-            "tair_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        # Humidity
-        if verbose:
-            print(" - Extracting daily mean humidity...")
-        df_hum_mean = safran_extract_all_timesteps(
-            ds_daily_mean["Qair"],
-            "qair_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        # Wind
-        if verbose:
-            print(" - Extracting daily mean wind...")
-        df_wind_mean = safran_extract_all_timesteps(
-            ds_daily_mean["Wind"],
-            "wind_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        # Radiation
-        if verbose:
-            print(" - Extracting daily mean short-wave radiation...")
-        df_rad_mean = safran_extract_all_timesteps(
-            ds_daily_mean["SWdown"],
-            "rad_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        if verbose:
-            print(" - Extracting daily mean long-wave radiation...")
-        df_rad_mean = safran_extract_all_timesteps(
-            ds_daily_mean["LWdown"],
-            "rad_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        # Precipitation
-        if verbose:
-            print(" - Extracting daily mean rainfall...")
-        df_prec_mean = safran_extract_all_timesteps(
-            ds_daily_mean["Rainf"],
-            "prec_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        # Pressure
-        if verbose:
-            print(" - Extracting daily mean pressure...")
-        df_press_mean = safran_extract_all_timesteps(
-            ds_daily_mean["PSurf"],
-            "press_mean",
-            "dayofyear",
-            latloc,
-            lonloc,
-            verbose=verbose,
-        )
-
-        if only_means:
-            df_out = pd.concat(
-                [
-                    df_tair_mean,
-                    df_hum_mean.drop(columns="dayofyear"),
-                    df_wind_mean.drop(columns="dayofyear"),
-                    df_rad_mean.drop(columns="dayofyear"),
-                    df_prec_mean.drop(columns="dayofyear"),
-                    df_press_mean.drop(columns="dayofyear"),
-                ],
-                axis=1,
+        # Extract data
+        # - Mean Values
+        df_mean = pd.DataFrame()
+        for variable in list(ds_means.data_vars):
+            df_i = safran_extract_all_timesteps(
+                ds_means[variable],
+                variable + "_mean",
+                timestep,
+                latloc,
+                lonloc,
+                verbose=False,
             )
 
+            if df_mean.empty:
+                df_mean = df_i.copy()
+            else:
+                df_mean = df_mean.merge(df_i, on=timestep, how="outer")
+
+        # - Min Values
+        df_min = pd.DataFrame()
+        for variable in list(ds_min.data_vars):
+            df_i = safran_extract_all_timesteps(
+                ds_min[variable],
+                variable + "_min",
+                timestep,
+                latloc,
+                lonloc,
+                verbose=False,
+            )
+
+            if df_min.empty:
+                df_min = df_i.copy()
+            else:
+                df_min = df_min.merge(df_i, on=timestep, how="outer")
+
+        # - Max Values
+        df_max = pd.DataFrame()
+        for variable in list(ds_max.data_vars):
+            df_i = safran_extract_all_timesteps(
+                ds_max[variable],
+                variable + "_max",
+                timestep,
+                latloc,
+                lonloc,
+                verbose=False,
+            )
+
+            if df_max.empty:
+                df_max = df_i.copy()
+            else:
+                df_max = df_max.merge(df_i, on=timestep, how="outer")
+
+        # - Sum Values
+        df_sum = pd.DataFrame()
+        for variable in list(ds_sum.data_vars):
+            df_i = safran_extract_all_timesteps(
+                ds_sum[variable],
+                variable + "_sum",
+                timestep,
+                latloc,
+                lonloc,
+                verbose=False,
+            )
+
+            if df_sum.empty:
+                df_sum = df_i.copy()
+            else:
+                df_sum = df_sum.merge(df_i, on=timestep, how="outer")
+
+        # Merge all variables of that site
+        df_min = df_min.reset_index(drop=True)
+        df_max = df_max.reset_index(drop=True)
+        df_sum = df_sum.reset_index(drop=True)
+
+        df_site = pd.concat(
+            [
+                df_mean,
+                df_min.drop(timestep, axis=1),
+                df_max.drop(timestep, axis=1),
+                df_sum.drop(timestep, axis=1),
+            ],
+            axis=1,
+        )
+        # Add site id
+        df_site["idp"] = sites_in["idp"].iloc[i]
+
+        # Add to df_final
+        if df_final.empty:
+            df_final = df_site.copy()
         else:
-            # DAILY MINIMUMS ---------------------------------------------------------------
-            ds_daily_min = ds_org.groupby("tstep.dayofyear").min("tstep")
-            # Temperature
-            if verbose:
-                print(" - Extracting daily minimum temperature...")
-            df_tair_min = safran_extract_all_timesteps(
-                ds_daily_min["Tair"],
-                "tair_min",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Humidity
-            if verbose:
-                print(" - Extracting daily minimum humidity...")
-            df_hum_min = safran_extract_all_timesteps(
-                ds_daily_min["Qair"],
-                "qair_min",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Pressure
-            if verbose:
-                print(" - Extracting daily minimum pressure...")
-            df_press_min = safran_extract_all_timesteps(
-                ds_daily_min["PSurf"],
-                "press_min",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # DAILY MAXIMUMS ---------------------------------------------------------------
-            ds_daily_max = ds_org.groupby("tstep.dayofyear").max("tstep")
-            # Temperature
-            if verbose:
-                print(" - Extracting daily maximum temperature...")
-            df_tair_max = safran_extract_all_timesteps(
-                ds_daily_max["Tair"],
-                "tair_max",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Humidity
-            if verbose:
-                print(" - Extracting daily maximum humidity...")
-            df_hum_max = safran_extract_all_timesteps(
-                ds_daily_max["Qair"],
-                "qair_max",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Pressure
-            if verbose:
-                print(" - Extracting daily maximum pressure...")
-            df_press_max = safran_extract_all_timesteps(
-                ds_daily_max["PSurf"],
-                "press_max",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Wind
-            if verbose:
-                print(" - Extracting daily maximum wind...")
-            df_wind_max = safran_extract_all_timesteps(
-                ds_daily_max["Wind"],
-                "wind_max",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # DAILY SUMS ---------------------------------------------------------------
-            ds_daily_sum = ds_org.groupby("tstep.dayofyear").sum("tstep")
-            # Rainfall
-            if verbose:
-                print(" - Extracting daily sum rainfall...")
-            df_prec_sum = safran_extract_all_timesteps(
-                ds_daily_sum["Rainf"],
-                "rainf_sum",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Snowfall
-            if verbose:
-                print(" - Extracting daily sum snowfall...")
-            df_snow_sum = safran_extract_all_timesteps(
-                ds_daily_sum["Snowf"],
-                "snowf_sum",
-                "dayofyear",
-                latloc,
-                lonloc,
-                verbose=verbose,
-            )
-
-            # Merge dataframes
-            df_out = pd.concat(
-                [
-                    df_tair_mean,
-                    df_tair_min.drop(columns="dayofyear"),
-                    df_tair_max.drop(columns="dayofyear"),
-                    df_hum_mean.drop(columns="dayofyear"),
-                    df_hum_min.drop(columns="dayofyear"),
-                    df_hum_max.drop(columns="dayofyear"),
-                    df_wind_mean.drop(columns="dayofyear"),
-                    df_wind_max.drop(columns="dayofyear"),
-                    df_rad_mean.drop(columns="dayofyear"),
-                    df_prec_mean.drop(columns="dayofyear"),
-                    df_press_mean.drop(columns="dayofyear"),
-                    df_press_min.drop(columns="dayofyear"),
-                    df_press_max.drop(columns="dayofyear"),
-                    df_prec_sum.drop(columns="dayofyear"),
-                    df_snow_sum.drop(columns="dayofyear"),
-                ],
-                axis=1,
-            )
-        # End else only_means
-        df_out["idp"] = sites_in["idp"].iloc[i]
-
-        if i == 0:
-            df_final = df_out.copy()
-        else:
-            df_final = pd.concat([df_final, df_out], axis=0)
+            df_final = pd.concat([df_final, df_site], axis=0)
     # End of loop over sites
+
+    # Move idp to first column
+    df_final.insert(0, "idp", df_final.pop("idp"))
+
+    # Reset index
+    df_final = df_final.reset_index(drop=True)
+
+    # Close all datasets
+    ds_org.close()
+    ds_means.close()
+    ds_min.close()
+    ds_max.close()
+    ds_sum.close()
 
     return df_final
 

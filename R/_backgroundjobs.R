@@ -1,35 +1,33 @@
-# Make wide location dataset (CHUNK TAKES ABOUT 6 MINUTES TO RUN!)
-# Start Timer
-tic()
-# Get dataframes stating which variable is sampled how often and when
-loc_vars  <- get_measurement_frequency_of_vars(df_loc,  "location")
-tree_vars <- get_measurement_frequency_of_vars(df_tree, "tree")
+source(here::here("R/_setup.R"))
+load_or_save_latest_file(nfi_dataset_for_analysis, "load")
 
-# Widen dataframes
-df_loc_wide  <- widen_dataframe(df_loc,  loc_vars,  "location")
-df_tree_wide <- widen_dataframe(df_tree, tree_vars, "tree")
+# ______________________________________________________________________________
+my_min_trees_per_site <- 3
+my_min_sites_per_year <- 5
 
-# input <- df_loc;  df_vars <- loc_vars;  data_type <- "location"
-# input <- df_tree; df_vars <- tree_vars; data_type  <- "tree"
+tt_height_gre <- 
+  get_temporal_trends_for_2_groups(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "height_class",
+    name_group_2       = "gre",
+    n_groups_1         = 10,
+    n_groups_2         = 9,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+  )
 
-# Quality check for duplicates:
-if (length(unique(df_loc_wide$idp)) != nrow(df_loc_wide)) {stop("QC FAILED!")}
-if (length(unique(df_tree_wide$tree_id)) != nrow(df_tree_wide)) {stop("QC FAILED!")}
+tt_gre_height <- 
+  get_temporal_trends_for_2_groups(
+    df_in              = nfi_dataset_for_analysis,
+    name_group_1       = "gre",
+    name_group_2       = "height_class",
+    n_groups_1         = 10,
+    n_groups_2         = 9,
+    min_trees_per_site = my_min_trees_per_site,
+    min_sites_per_year = my_min_sites_per_year
+  )
 
-# Combine and clean dataframes to one large wide one with one tree per row
-vars_clean   <- c("idp", "visite_1", "visite_2", "campagne_1", "campagne_2")
-df_loc_wide  <- df_loc_wide  |> mutate(across(all_of(vars_clean), factor))
-df_tree_wide <- df_tree_wide |> mutate(across(all_of(vars_clean), factor))
-
-df_comb <- 
-  left_join(
-    df_tree_wide, 
-    df_loc_wide, 
-    by = vars_clean)
-
-# End Timer
-toc()
-beep(2)
-
-# Save data
-load_or_save_latest_file("df_comb", "save")
+tt_save_and_move_to_shiny(tt_height_gre, my_height = 7, my_width = 12)
+tt_save_and_move_to_shiny(tt_gre_height, my_height = 7, my_width = 12)
+# ______________________________________________________________________________
+beepr::beep(2)
